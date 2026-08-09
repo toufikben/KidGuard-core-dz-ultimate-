@@ -4,6 +4,8 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 import { DeviceRole, LocationPoint, SafeZone, LoggedAlert } from './types';
 import { Language } from './translations';
 import { Navbar } from './components/Navbar';
@@ -18,6 +20,7 @@ import { HealthMonitorService } from './services/HealthMonitorService';
 import { AudioService } from './services/AudioService';
 import { PairingService } from './services/PairingService';
 import { OfflineQueueService } from './services/OfflineQueueService';
+import { BackgroundLocationService } from './services/BackgroundLocationService';
 
 const SAFE_ZONES_KEY = 'kidguard_safe_zones';
 const ROLE_KEY = 'kidguard_role';
@@ -108,6 +111,7 @@ export default function App() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
+  const [isBgTracking, setIsBgTracking] = useState(false);
 
   // PIN gate for settings
   const [pinUnlocked, setPinUnlocked] = useState(false);
@@ -235,61 +239,115 @@ export default function App() {
     )
   );
 
-  // Real GPS watcher
+  // Hybrid GPS: Background service on native (Android/iOS via Capacitor), HTML5 on web
   useEffect(() => {
-    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) {
-      setGeoError(
-        lang === 'ar'
-          ? 'جهازك لا يدعم خدمة تحديد الموقع'
-          : 'Geolocation is not supported on this device'
-      );
-      return;
+    const bgService = BackgroundLocationService.getInstance();
+    let unsub: (() => void) | null = null;
+    let webWatchId: number | null = null;
+
+    const handleLocation = (realLoc: LocationPoint) => {
+      setGeoError(null);
+      if (!isSimulatingOutside) {
+        setLocation(realLoc);
+        setLocationHistory((hist) => [...hist.slice(-30), realLoc]);
+        runEvaluation(realLoc, safeZones);
+      }
+    };
+
+    const startTracking = async () => {
+      if (Capacitor.isNativePlatform()) {
+        // Native background GPS
+        unsub = bgService.onLocation(handleLocation);
+        const ok = await bgService.start();
+        setIsBgTracking(ok && bgService.isTracking());
+        if (!ok) {
+          setGeoError(
+            lang === 'ar'
+              ? 'تعذر تشغيل التتبع في الخلفية. تحقق من أذونات الموقع.'
+              : lang === 'fr'
+              ? "Impossible de démarrer le suivi en arrière-plan. Vérifiez les autorisations."
+              : 'Could not start background tracking. Check location permissions.'
+          );
+        }
+      } else {
+        // Web / browser fallback
+        if (typeof navigator === 'undefined' || !('geolocation' in navigator)) {
+          setGeoError(
+            lang === 'ar'
+              ? 'جهازك لا يدعم خدمة تحديد الموقع'
+              : lang === 'fr'
+              ? "La géolocalisation n'est pas prise en charge"
+              : 'Geolocation is not supported on this device'
+          );
+          return;
+        }
+        webWatchId = navigator.geolocation.watchPosition(
+          (pos) => {
+            handleLocation({
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              accuracy: pos.coords.accuracy || 10,
+              speed: pos.coords.speed ?? 0,
+              heading: pos.coords.heading ?? 0,
+              altitude: pos.coords.altitude ?? 0,
+              timestamp: pos.timestamp || Date.now(),
+              isMockLocation: false,
+            });
+          },
+          (err) => {
+            const msg =
+              err.code === 1
+                ? lang === 'ar'
+                  ? 'تم رفض إذن الموقع. يرجى تفعيله من إعدادات المتصفح.'
+                  : lang === 'fr'
+                  ? "Autorisation de localisation refusée. Veuillez l'activer dans les paramètres."
+                  : 'Location permission denied. Please enable it in browser settings.'
+                : err.code === 2
+                ? lang === 'ar'
+                  ? 'تعذر الحصول على الموقع. تحقق من تفعيل GPS.'
+                  : lang === 'fr'
+                  ? "Position indisponible. Vérifiez que le GPS est activé."
+                  : 'Position unavailable. Check that GPS is enabled.'
+                : lang === 'ar'
+                ? 'انتهت مهلة تحديد الموقع. حاول مرة أخرى.'
+                : lang === 'fr'
+                ? "Délai de localisation dépassé. Réessayez."
+                : 'Location request timed out.';
+            setGeoError(msg);
+            console.warn('GPS error:', err.message);
+          },
+          {
+            enableHighAccuracy: true,
+            maximumAge: 2000,
+            timeout: 15000,
+          }
+        );
+      }
+    };
+
+    startTracking();
+
+    // Re-start background tracking when the app returns from background (native only)
+    let appStateHandle: { remove: () => void } | null = null;
+    if (Capacitor.isNativePlatform()) {
+      CapApp.addListener('appStateChange', ({ isActive }) => {
+        if (isActive && !bgService.isTracking()) {
+          bgService.start().then((ok) => setIsBgTracking(ok && bgService.isTracking()));
+        }
+      }).then((h) => {
+        appStateHandle = h;
+      });
     }
 
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        setGeoError(null);
-        if (!isSimulatingOutside) {
-          const realLoc: LocationPoint = {
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            accuracy: pos.coords.accuracy || 10,
-            speed: pos.coords.speed ?? 0,
-            heading: pos.coords.heading ?? 0,
-            altitude: pos.coords.altitude ?? 0,
-            timestamp: pos.timestamp || Date.now(),
-            isMockLocation: false,
-          };
-          setLocation(realLoc);
-          setLocationHistory((hist) => [...hist.slice(-30), realLoc]);
-          runEvaluation(realLoc, safeZones);
-        }
-      },
-      (err) => {
-        const msg =
-          err.code === 1
-            ? lang === 'ar'
-              ? 'تم رفض إذن الموقع. يرجى تفعيله من إعدادات المتصفح.'
-              : 'Location permission denied. Please enable it in browser settings.'
-            : err.code === 2
-            ? lang === 'ar'
-              ? 'تعذر الحصول على الموقع. تحقق من تفعيل GPS.'
-              : 'Position unavailable. Check that GPS is enabled.'
-            : lang === 'ar'
-            ? 'انتهت مهلة تحديد الموقع. حاول مرة أخرى.'
-            : 'Location request timed out.';
-        setGeoError(msg);
-        console.warn('GPS error:', err.message);
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 2000,
-        timeout: 15000,
-      }
-    );
-
     return () => {
-      navigator.geolocation.clearWatch(watchId);
+      if (unsub) unsub();
+      if (Capacitor.isNativePlatform()) {
+        bgService.stop();
+      }
+      if (webWatchId != null) {
+        navigator.geolocation.clearWatch(webWatchId);
+      }
+      appStateHandle?.remove();
     };
   }, [isSimulatingOutside, safeZones, runEvaluation, lang]);
 
@@ -450,6 +508,13 @@ export default function App() {
         {geoError && (
           <div className="bg-amber-900/90 border-b border-amber-700 py-2 px-4 text-center text-xs text-amber-100">
             ⚠️ {geoError}
+          </div>
+        )}
+
+        {/* Native background tracking status */}
+        {Capacitor.isNativePlatform() && (
+          <div className="bg-slate-900/70 border-b border-slate-800 py-1 px-4 text-center text-[10px] text-emerald-400">
+            {isBgTracking ? '📡 تتبع خلفي نشط' : '📡 تتبع خلفي متوقف'}
           </div>
         )}
 
