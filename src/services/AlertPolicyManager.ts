@@ -1,23 +1,24 @@
 import { AlertPolicyConfig, LocationPoint, LoggedAlert, RiskAssessment } from '../types';
 import { SmsService } from './SmsService';
+import { AudioService } from './AudioService';
 
 export class AlertPolicyManager {
   private static instance: AlertPolicyManager;
 
   private config: AlertPolicyConfig = {
     firstExitAlertEnabled: true,
-    triggerEmergencyOnExit: true, // Trigger emergency siren automatically on exit
-    instant1mExitEmergency: true, // Default to true (Immediate full danger mode on exit >1m)
-    autoSmsLocationOnExit: true, // Default to true (Automatic instant SMS with GPS location link)
+    triggerEmergencyOnExit: true,
+    instant1mExitEmergency: true,
+    autoSmsLocationOnExit: true,
     followUpIntervalMinutes: 5,
     maxFollowUpAlerts: 3,
     resetOnReturn: true,
     soundAlertEnabled: true,
     vibrationEnabled: true,
     smsEnabled: true,
-    parentPhone: '+213555123456',
-    childName: 'أمير / Amir',
-    parentPin: '1234',
+    parentPhone: '',
+    childName: 'طفل / Child',
+    parentPin: '',
   };
 
   private activeIncidentId: string | null = null;
@@ -27,6 +28,7 @@ export class AlertPolicyManager {
 
   private constructor() {
     this.loadConfig();
+    this.loadAlertHistory();
   }
 
   public static getInstance(): AlertPolicyManager {
@@ -49,7 +51,7 @@ export class AlertPolicyManager {
     try {
       localStorage.setItem('kidguard_alert_policy', JSON.stringify(this.config));
     } catch (e) {
-      console.warn('Failed to save alert policy to localStorage', e);
+      console.warn('Failed to save alert policy', e);
     }
   }
 
@@ -60,21 +62,58 @@ export class AlertPolicyManager {
         this.config = { ...this.config, ...JSON.parse(saved) };
       }
     } catch (e) {
-      console.warn('Failed to load alert policy from localStorage', e);
+      console.warn('Failed to load alert policy', e);
     }
   }
 
-  /**
-   * Processes risk evaluation & determines if SMS / Alert trigger is needed
-   */
+  private saveAlertHistory(): void {
+    try {
+      localStorage.setItem(
+        'kidguard_alert_history',
+        JSON.stringify(this.alertHistory.slice(0, 50))
+      );
+    } catch (e) {
+      console.warn('Failed to save alert history', e);
+    }
+  }
+
+  private loadAlertHistory(): void {
+    try {
+      const saved = localStorage.getItem('kidguard_alert_history');
+      if (saved) {
+        this.alertHistory = JSON.parse(saved);
+      }
+    } catch (e) {
+      console.warn('Failed to load alert history', e);
+    }
+  }
+
+  private triggerVibration(): void {
+    if (!this.config.vibrationEnabled) return;
+    try {
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        navigator.vibrate([200, 100, 200, 100, 400]);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  private triggerSoundAlert(): void {
+    if (!this.config.soundAlertEnabled) return;
+    try {
+      AudioService.getInstance().playUiBeep();
+    } catch {
+      // ignore
+    }
+  }
+
   public async evaluateAndDispatch(
     assessment: RiskAssessment,
     location: LocationPoint
   ): Promise<LoggedAlert | null> {
-    // 1. Reset on Safe Return
     if (assessment.state === 'SAFE' || assessment.state === 'RETURNED_TO_SAFE_ZONE') {
       if (this.config.resetOnReturn && this.activeIncidentId) {
-        console.log(`[AlertPolicy] Child returned to safe zone. Resetting incident ${this.activeIncidentId}`);
         this.activeIncidentId = null;
         this.alertSentCount = 0;
         this.lastAlertTimestamp = 0;
@@ -84,46 +123,47 @@ export class AlertPolicyManager {
 
     const now = Date.now();
 
-    // 2. Start new Incident if none active
     if (!this.activeIncidentId) {
       this.activeIncidentId = `inc_${now}_${Math.floor(Math.random() * 1000)}`;
       this.alertSentCount = 0;
       this.lastAlertTimestamp = 0;
     }
 
-    // 3. Check if first exit alert
     const isFirstAlert = this.alertSentCount === 0;
 
     if (isFirstAlert) {
       if (!this.config.firstExitAlertEnabled) return null;
     } else {
-      // Follow-up checks
-      if (this.alertSentCount >= this.config.maxFollowUpAlerts) {
-        return null; // Max follow ups reached
-      }
-
+      if (this.alertSentCount >= this.config.maxFollowUpAlerts) return null;
       const elapsedMinutes = (now - this.lastAlertTimestamp) / (1000 * 60);
-      if (elapsedMinutes < this.config.followUpIntervalMinutes) {
-        return null; // Interval not reached yet
-      }
+      if (elapsedMinutes < this.config.followUpIntervalMinutes) return null;
     }
 
-    // Prepare Alert
     const incidentId = this.activeIncidentId;
     const title = `[${assessment.riskLevel}] ${
       assessment.state === 'EMERGENCY'
         ? 'تنبيه طوارئ قسوى!'
         : 'تنبيه خروج من المنطقة الآمنة'
     }`;
-    const reason = assessment.riskFactors.length > 0 ? assessment.riskFactors[0] : 'خروج من المنطقة الآمنة';
+    const reason =
+      assessment.riskFactors.length > 0
+        ? assessment.riskFactors[0]
+        : 'خروج من المنطقة الآمنة';
     const message = `${this.config.childName}: ${reason}`;
+
+    this.triggerVibration();
+    this.triggerSoundAlert();
 
     let smsSent = false;
 
-    // Send SMS if enabled
-    if (this.config.smsEnabled && this.config.parentPhone) {
-      const smsService = SmsService.getInstance();
-      const res = await smsService.sendAlertSms(
+    // FIX: respect both smsEnabled AND autoSmsLocationOnExit
+    const shouldSendSms =
+      this.config.smsEnabled &&
+      !!this.config.parentPhone &&
+      (this.config.autoSmsLocationOnExit || assessment.state === 'EMERGENCY');
+
+    if (shouldSendSms) {
+      const res = await SmsService.getInstance().sendAlertSms(
         this.config.parentPhone,
         this.config.childName,
         reason,
@@ -132,7 +172,10 @@ export class AlertPolicyManager {
       smsSent = res.success;
     }
 
-    const mapsLink = SmsService.getInstance().generateMapsUrl(location.latitude, location.longitude);
+    const mapsLink = SmsService.getInstance().generateMapsUrl(
+      location.latitude,
+      location.longitude
+    );
 
     const loggedAlert: LoggedAlert = {
       id: `alt_${now}_${Math.floor(Math.random() * 1000)}`,
@@ -149,10 +192,8 @@ export class AlertPolicyManager {
     this.alertSentCount++;
     this.lastAlertTimestamp = now;
     this.alertHistory.unshift(loggedAlert);
-
-    if (this.alertHistory.length > 100) {
-      this.alertHistory.pop();
-    }
+    if (this.alertHistory.length > 100) this.alertHistory.pop();
+    this.saveAlertHistory();
 
     return loggedAlert;
   }
@@ -163,5 +204,12 @@ export class AlertPolicyManager {
 
   public clearAlertHistory(): void {
     this.alertHistory = [];
+    this.saveAlertHistory();
+  }
+
+  /** Validate Algerian mobile: +2135/6/7XXXXXXXX or 05/06/07XXXXXXXX */
+  public static isValidAlgeriaPhone(phone: string): boolean {
+    const cleaned = phone.replace(/[\s\-()]/g, '');
+    return /^(\+213|0)[5-7]\d{8}$/.test(cleaned);
   }
 }
