@@ -1,0 +1,11 @@
+{
+  "name": "KidGuard Core DZ Pro",
+  "description": "Child Safety & Location Protection System with Safe Zone Geofencing, Risk Engine, Offline Event Queue, and Health Monitoring.",
+  "requestFramePermissions": [
+    "geolocation",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

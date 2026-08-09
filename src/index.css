@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+/* Force LTR direction for phone input numbers in Arabic RTL mode */
+.ltr-input {
+  direction: ltr !important;
+  text-align: left !important;
+}
+
+/* Custom pulse keyframes for Leaflet marker */
+@keyframes ping {
+  75%, 100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 1rem !important;
+  padding: 0.25rem !important;
+}
+
+/* Light mode override styling */
+.light-mode-override {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
