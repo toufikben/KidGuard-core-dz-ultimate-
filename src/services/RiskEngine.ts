@@ -14,6 +14,12 @@ export class RiskEngine {
     return RiskEngine.instance;
   }
 
+  /** HTML5 Geolocation speed is always in m/s → convert to km/h */
+  private toKmH(speedMs: number | null | undefined): number {
+    if (speedMs == null || isNaN(speedMs) || speedMs < 0) return 0;
+    return Math.round(speedMs * 3.6);
+  }
+
   public assessRisk(
     location: LocationPoint,
     geofenceEval: GeofenceEvaluation,
@@ -26,7 +32,7 @@ export class RiskEngine {
     const factors: string[] = [];
     let score = 0;
 
-    // 1. Check Safe Zone Status
+    // 1. Inside safe zone
     if (geofenceEval.status === 'SAFE_INSIDE') {
       const wasOutside = this.exitStartTime !== null;
       this.exitStartTime = null;
@@ -37,7 +43,11 @@ export class RiskEngine {
           riskLevel: 'LOW',
           confidence: geofenceEval.confidence,
           riskFactors: [
-            lang === 'ar' ? 'عاد الطفل بأمان داخل المنطقة الآمنة' : 'Child safely returned to Safe Zone',
+            lang === 'ar'
+              ? 'عاد الطفل بأمان داخل المنطقة الآمنة'
+              : lang === 'fr'
+              ? 'Enfant revenu en sécurité dans la zone'
+              : 'Child safely returned to Safe Zone',
           ],
           state: 'RETURNED_TO_SAFE_ZONE',
           timestamp: Date.now(),
@@ -50,15 +60,17 @@ export class RiskEngine {
         confidence: geofenceEval.confidence,
         riskFactors: [
           lang === 'ar'
-            ? `داخل ${geofenceEval.insideZoneNames.join(', ')}`
-            : `Inside ${geofenceEval.insideZoneNames.join(', ')}`,
+            ? `داخل ${geofenceEval.insideZoneNames.join(', ') || 'المنطقة الآمنة'}`
+            : lang === 'fr'
+            ? `À l'intérieur de ${geofenceEval.insideZoneNames.join(', ') || 'zone sûre'}`
+            : `Inside ${geofenceEval.insideZoneNames.join(', ') || 'Safe Zone'}`,
         ],
         state: 'SAFE',
         timestamp: Date.now(),
       };
     }
 
-    // 2. Confirmed Exit handling - Enforce Minimum Floor (MEDIUM)
+    // 2. Confirmed exit
     if (!this.exitStartTime) {
       this.exitStartTime = Date.now();
     }
@@ -71,36 +83,43 @@ export class RiskEngine {
       factors.push(
         lang === 'ar'
           ? `خروج فوري بـ 1+ متر عن المنطقة الآمنة (${geofenceEval.nearestZoneName || 'المنطقة'}) - وضع الخطر القسوي المباشر!`
+          : lang === 'fr'
+          ? `Sortie instantanée (1m+) de la zone sûre (${geofenceEval.nearestZoneName || 'Zone'}) - Mode Danger activé!`
           : `Instant exit (1m+) from Safe Zone (${geofenceEval.nearestZoneName || 'Zone'}) - Full Danger Mode Activated!`
       );
     } else {
-      // Floor at MEDIUM (min 45 points) for confirmed exit
       score += 45;
       factors.push(
         lang === 'ar'
           ? `خروج مؤكد من المنطقة الآمنة (${geofenceEval.nearestZoneName || 'المنطقة'})`
+          : lang === 'fr'
+          ? `Sortie confirmée de la zone sûre (${geofenceEval.nearestZoneName || 'Zone'})`
           : `Confirmed exit from Safe Zone (${geofenceEval.nearestZoneName || 'Zone'})`
       );
     }
 
-    // 3. Duration Factor
+    // 3. Duration
     if (durationMinutes > 0) {
       const durationScore = Math.min(25, durationMinutes * 3);
       score += durationScore;
       factors.push(
         lang === 'ar'
           ? `مستمر خارج المنطقة منذ ${durationMinutes} دقيقة`
+          : lang === 'fr'
+          ? `Hors zone depuis ${durationMinutes} minute(s)`
           : `Outside safe zone for ${durationMinutes} minutes`
       );
     }
 
-    // 4. Distance Delta
+    // 4. Distance
     const distance = geofenceEval.distanceToNearestZone;
     if (distance > 800) {
       score += 20;
       factors.push(
         lang === 'ar'
           ? `ابتعاد كبير: ${distance} متر عن أقرب منطقة`
+          : lang === 'fr'
+          ? `Grande distance: ${distance} m de la zone la plus proche`
           : `High distance delta: ${distance} meters from nearest zone`
       );
     } else if (distance > 300) {
@@ -108,20 +127,21 @@ export class RiskEngine {
       factors.push(
         lang === 'ar'
           ? `ابتعاد متوسط: ${distance} متر`
+          : lang === 'fr'
+          ? `Distance moyenne: ${distance} m`
           : `Moderate distance: ${distance} meters`
       );
     }
 
-    // 5. Speed / Vehicular motion detection
-    const speedKmH = location.speed
-      ? Math.round((location.speed > 50 ? location.speed : location.speed * 3.6))
-      : 0;
-
+    // 5. Speed (always m/s → km/h)
+    const speedKmH = this.toKmH(location.speed);
     if (speedKmH > 35) {
       score += 20;
       factors.push(
         lang === 'ar'
           ? `سرعة تحرك عالية (مركبة): ${speedKmH} كم/س`
+          : lang === 'fr'
+          ? `Vitesse élevée (véhicule): ${speedKmH} km/h`
           : `Vehicular speed detected: ${speedKmH} km/h`
       );
     } else if (speedKmH > 15) {
@@ -129,34 +149,38 @@ export class RiskEngine {
       factors.push(
         lang === 'ar'
           ? `سرعة تحرك سريعة (دراجة/ركض): ${speedKmH} كم/س`
+          : lang === 'fr'
+          ? `Mouvement rapide: ${speedKmH} km/h`
           : `Fast movement speed: ${speedKmH} km/h`
       );
     }
 
-    // 6. Security & Tampering
+    // 6. Tamper / mock location
     if (isTampered || isMockLocation || location.isMockLocation) {
       score += 35;
       factors.push(
         lang === 'ar'
           ? 'اكتشاف موقع وهمي أو محاولة العبث بالنظام'
+          : lang === 'fr'
+          ? 'Fausse position ou altération détectée'
           : 'Mock location or app tampering detected'
       );
     }
 
-    // 7. Battery State
+    // 7. Critical battery
     if (batteryLevel <= 10) {
       score += 15;
       factors.push(
         lang === 'ar'
           ? `مستوى بطارية حرج: ${batteryLevel}%`
+          : lang === 'fr'
+          ? `Batterie critique: ${batteryLevel}%`
           : `Critical battery level: ${batteryLevel}%`
       );
     }
 
-    // Cap score at 100
     score = Math.min(100, score);
 
-    // Map Risk Score to RiskLevel & State
     let riskLevel: RiskLevel = 'MEDIUM';
     let state: KidState = 'OUTSIDE_ZONE';
 
