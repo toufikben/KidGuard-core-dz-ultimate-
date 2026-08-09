@@ -18,39 +18,23 @@ import { HealthMonitorService } from './services/HealthMonitorService';
 import { AudioService } from './services/AudioService';
 import { PairingService } from './services/PairingService';
 import { OfflineQueueService } from './services/OfflineQueueService';
-import { BatteryEngine } from './services/BatteryEngine';
 
-export default function App() {
-  const [role, setRole] = useState<DeviceRole>('PARENT');
-  const [lang, setLang] = useState<Language>('ar');
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark');
+const SAFE_ZONES_KEY = 'kidguard_safe_zones';
+const ROLE_KEY = 'kidguard_role';
+const LANG_KEY = 'kidguard_lang';
 
-  // Initial Coordinates (Algiers, Algeria default)
-  const [location, setLocation] = useState<LocationPoint>({
-    latitude: 36.7538,
-    longitude: 3.0588,
-    accuracy: 12,
-    speed: 1.2,
-    heading: 180,
-    altitude: 45,
-    timestamp: Date.now(),
-    isMockLocation: false,
-  });
-
-  const [locationHistory, setLocationHistory] = useState<LocationPoint[]>([
-    {
-      latitude: 36.7538,
-      longitude: 3.0588,
-      accuracy: 12,
-      speed: 1.2,
-      heading: 180,
-      altitude: 45,
-      timestamp: Date.now() - 300000,
-    },
-  ]);
-
-  // Default Safe Zones
-  const [safeZones, setSafeZones] = useState<SafeZone[]>([
+function loadSafeZones(): SafeZone[] {
+  try {
+    const raw = localStorage.getItem(SAFE_ZONES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  // Default zones for Algiers (first run only)
+  return [
     {
       id: 'zone_school_1',
       name: 'مدرسة التفوق / School',
@@ -63,15 +47,58 @@ export default function App() {
     {
       id: 'zone_home_2',
       name: 'المنزل / Home',
-      latitude: 36.7600,
-      longitude: 3.0650,
+      latitude: 36.76,
+      longitude: 3.065,
       radius: 250,
       active: true,
       createdAt: Date.now(),
     },
-  ]);
+  ];
+}
 
-  const [alertHistory, setAlertHistory] = useState<LoggedAlert[]>([]);
+function saveSafeZones(zones: SafeZone[]) {
+  try {
+    localStorage.setItem(SAFE_ZONES_KEY, JSON.stringify(zones));
+  } catch {
+    // ignore
+  }
+}
+
+export default function App() {
+  const [role, setRole] = useState<DeviceRole>(() => {
+    try {
+      return (localStorage.getItem(ROLE_KEY) as DeviceRole) || 'PARENT';
+    } catch {
+      return 'PARENT';
+    }
+  });
+
+  const [lang, setLang] = useState<Language>(() => {
+    try {
+      return (localStorage.getItem(LANG_KEY) as Language) || 'ar';
+    } catch {
+      return 'ar';
+    }
+  });
+
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark');
+
+  const [location, setLocation] = useState<LocationPoint>({
+    latitude: 36.7538,
+    longitude: 3.0588,
+    accuracy: 12,
+    speed: 0,
+    heading: 0,
+    altitude: 45,
+    timestamp: Date.now(),
+    isMockLocation: false,
+  });
+
+  const [locationHistory, setLocationHistory] = useState<LocationPoint[]>([]);
+  const [safeZones, setSafeZones] = useState<SafeZone[]>(() => loadSafeZones());
+  const [alertHistory, setAlertHistory] = useState<LoggedAlert[]>(() =>
+    AlertPolicyManager.getInstance().getAlertHistory()
+  );
   const [isSirenActive, setIsSirenActive] = useState(false);
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
   const [isSimulatingOutside, setIsSimulatingOutside] = useState(false);
@@ -79,8 +106,12 @@ export default function App() {
     'map' | 'zones' | 'alerts' | 'health' | 'settings' | 'pairing'
   >('map');
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [geoError, setGeoError] = useState<string | null>(null);
+  const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
 
-  // Load Initial Configurations
+  // PIN gate for settings
+  const [pinUnlocked, setPinUnlocked] = useState(false);
+
   const alertPolicyManager = AlertPolicyManager.getInstance();
   const [alertPolicy, setAlertPolicy] = useState(alertPolicyManager.getConfig());
 
@@ -92,7 +123,33 @@ export default function App() {
     healthMonitor.getHealthDiagnostics(location)
   );
 
-  // Evaluate Risk on every Location or Zone update
+  // Persist role & language
+  useEffect(() => {
+    try {
+      localStorage.setItem(ROLE_KEY, role);
+    } catch {
+      // ignore
+    }
+  }, [role]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LANG_KEY, lang);
+    } catch {
+      // ignore
+    }
+  }, [lang]);
+
+  // Refresh offline queue count
+  const refreshOfflineCount = useCallback(() => {
+    const count = OfflineQueueService.getInstance().getPendingEvents().length;
+    setPendingOfflineCount(count);
+  }, []);
+
+  useEffect(() => {
+    refreshOfflineCount();
+  }, [refreshOfflineCount]);
+
   const runEvaluation = useCallback(
     async (currentLoc: LocationPoint, zones: SafeZone[]) => {
       const currentPolicy = alertPolicyManager.getConfig();
@@ -114,7 +171,6 @@ export default function App() {
         currentPolicy.instant1mExitEmergency ?? true
       );
 
-      // Alert Policy Evaluation
       const loggedAlert = await alertPolicyManager.evaluateAndDispatch(
         assessment,
         currentLoc
@@ -124,7 +180,6 @@ export default function App() {
         setAlertHistory((prev) => [loggedAlert, ...prev]);
       }
 
-      // Automatic Full Danger Siren Trigger on Safe Zone Exit
       if (
         currentPolicy.triggerEmergencyOnExit &&
         (assessment.state === 'OUTSIDE_ZONE' ||
@@ -137,7 +192,6 @@ export default function App() {
         }
       }
 
-      // Offline Queue Event Enqueue on confirmed exit or emergency
       if (
         assessment.state === 'DANGER' ||
         assessment.state === 'EMERGENCY' ||
@@ -154,13 +208,20 @@ export default function App() {
             state: assessment.state,
           }
         );
+        refreshOfflineCount();
       }
 
       setHealthStatus(healthMonitor.getHealthDiagnostics(currentLoc));
       setRiskAssessment(assessment);
       return assessment;
     },
-    [healthStatus.batteryLevel, healthStatus.tamperDetected, lang, pairingInfo.kidId]
+    [
+      healthStatus.batteryLevel,
+      healthStatus.tamperDetected,
+      lang,
+      pairingInfo.kidId,
+      refreshOfflineCount,
+    ]
   );
 
   const [riskAssessment, setRiskAssessment] = useState(() =>
@@ -174,46 +235,64 @@ export default function App() {
     )
   );
 
-  // Real-time GPS Watcher using HTML5 Geolocation API
+  // Real GPS watcher
   useEffect(() => {
-    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) return;
+    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) {
+      setGeoError(
+        lang === 'ar'
+          ? 'جهازك لا يدعم خدمة تحديد الموقع'
+          : 'Geolocation is not supported on this device'
+      );
+      return;
+    }
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
-        // Only override with real GPS if not in test simulation mode
+        setGeoError(null);
         if (!isSimulatingOutside) {
           const realLoc: LocationPoint = {
             latitude: pos.coords.latitude,
             longitude: pos.coords.longitude,
             accuracy: pos.coords.accuracy || 10,
-            speed: pos.coords.speed || 0,
-            heading: pos.coords.heading || 0,
-            altitude: pos.coords.altitude || 0,
+            speed: pos.coords.speed ?? 0,
+            heading: pos.coords.heading ?? 0,
+            altitude: pos.coords.altitude ?? 0,
             timestamp: pos.timestamp || Date.now(),
             isMockLocation: false,
           };
-
           setLocation(realLoc);
-          setLocationHistory((hist) => [...hist.slice(-20), realLoc]);
+          setLocationHistory((hist) => [...hist.slice(-30), realLoc]);
           runEvaluation(realLoc, safeZones);
         }
       },
       (err) => {
-        console.warn('Real GPS Watcher notice:', err.message);
+        const msg =
+          err.code === 1
+            ? lang === 'ar'
+              ? 'تم رفض إذن الموقع. يرجى تفعيله من إعدادات المتصفح.'
+              : 'Location permission denied. Please enable it in browser settings.'
+            : err.code === 2
+            ? lang === 'ar'
+              ? 'تعذر الحصول على الموقع. تحقق من تفعيل GPS.'
+              : 'Position unavailable. Check that GPS is enabled.'
+            : lang === 'ar'
+            ? 'انتهت مهلة تحديد الموقع. حاول مرة أخرى.'
+            : 'Location request timed out.';
+        setGeoError(msg);
+        console.warn('GPS error:', err.message);
       },
       {
         enableHighAccuracy: true,
-        maximumAge: 1000,
-        timeout: 10000,
+        maximumAge: 2000,
+        timeout: 15000,
       }
     );
 
     return () => {
       navigator.geolocation.clearWatch(watchId);
     };
-  }, [isSimulatingOutside, safeZones, runEvaluation]);
+  }, [isSimulatingOutside, safeZones, runEvaluation, lang]);
 
-  // Handler for manual map pin drag or click relocation
   const handleChildLocationChange = useCallback(
     (lat: number, lng: number) => {
       const updatedLoc: LocationPoint = {
@@ -223,13 +302,12 @@ export default function App() {
         timestamp: Date.now(),
       };
       setLocation(updatedLoc);
-      setLocationHistory((hist) => [...hist.slice(-20), updatedLoc]);
+      setLocationHistory((hist) => [...hist.slice(-30), updatedLoc]);
       runEvaluation(updatedLoc, safeZones);
     },
     [location, safeZones, runEvaluation]
   );
 
-  // Handlers
   const handleSaveSafeZone = (zoneData: Omit<SafeZone, 'id' | 'createdAt'>) => {
     const newZone: SafeZone = {
       ...zoneData,
@@ -238,12 +316,22 @@ export default function App() {
     };
     const updated = [...safeZones, newZone];
     setSafeZones(updated);
+    saveSafeZones(updated);
     runEvaluation(location, updated);
   };
 
   const handleDeleteSafeZone = (zoneId: string) => {
+    const confirmMsg =
+      lang === 'ar'
+        ? 'هل أنت متأكد من حذف هذه المنطقة الآمنة؟'
+        : lang === 'fr'
+        ? 'Êtes-vous sûr de vouloir supprimer cette zone sûre ?'
+        : 'Are you sure you want to delete this safe zone?';
+    if (!window.confirm(confirmMsg)) return;
+
     const updated = safeZones.filter((z) => z.id !== zoneId);
     setSafeZones(updated);
+    saveSafeZones(updated);
     runEvaluation(location, updated);
   };
 
@@ -269,13 +357,9 @@ export default function App() {
       audioService.stopEmergencyRecording();
       setIsRecordingAudio(false);
     } else {
-      const ok = await audioService.startEmergencyRecording(
-        undefined,
-        (url) => {
-          console.log('Emergency audio recorded:', url);
-          setIsRecordingAudio(false);
-        }
-      );
+      const ok = await audioService.startEmergencyRecording(undefined, () => {
+        setIsRecordingAudio(false);
+      });
       if (ok) setIsRecordingAudio(true);
     }
   };
@@ -283,6 +367,7 @@ export default function App() {
   const handleSyncNow = async () => {
     await OfflineQueueService.getInstance().syncQueue();
     setHealthStatus(healthMonitor.getHealthDiagnostics(location));
+    refreshOfflineCount();
   };
 
   const handleGenerateNewPairingCode = () => {
@@ -299,9 +384,34 @@ export default function App() {
   const handleTriggerSos = () => {
     AudioService.getInstance().startEmergencySiren();
     setIsSirenActive(true);
-
     const sosLoc: LocationPoint = { ...location, timestamp: Date.now() };
     runEvaluation(sosLoc, safeZones);
+  };
+
+  // PIN-protected open settings
+  const handleOpenSettings = () => {
+    const pin = alertPolicy.parentPin?.trim();
+    if (pin && pin.length >= 4 && !pinUnlocked) {
+      const entered = window.prompt(
+        lang === 'ar'
+          ? 'أدخل رمز PIN الخاص بالوالد:'
+          : lang === 'fr'
+          ? 'Entrez le code PIN parent :'
+          : 'Enter parent PIN:'
+      );
+      if (entered !== pin) {
+        window.alert(
+          lang === 'ar'
+            ? 'رمز PIN غير صحيح'
+            : lang === 'fr'
+            ? 'Code PIN incorrect'
+            : 'Incorrect PIN'
+        );
+        return;
+      }
+      setPinUnlocked(true);
+    }
+    setIsSettingsModalOpen(true);
   };
 
   return (
@@ -311,7 +421,6 @@ export default function App() {
         theme === 'light' ? 'light-mode-override' : ''
       }`}
     >
-      {/* Top Navigation */}
       <Navbar
         role={role}
         setRole={setRole}
@@ -320,10 +429,9 @@ export default function App() {
         theme={theme}
         setTheme={setTheme}
         isOnline={healthStatus.networkConnected}
-        onOpenSettings={() => setIsSettingsModalOpen(true)}
+        onOpenSettings={handleOpenSettings}
       />
 
-      {/* Settings Modal (Global) */}
       <SettingsModal
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
@@ -337,24 +445,37 @@ export default function App() {
         role={role}
       />
 
-      {/* Main View Container */}
       <main className="pb-12">
-        {/* Quick Simulation Banner Control for Testing Safe Zone Exit */}
+        {/* GPS permission / error banner */}
+        {geoError && (
+          <div className="bg-amber-900/90 border-b border-amber-700 py-2 px-4 text-center text-xs text-amber-100">
+            ⚠️ {geoError}
+          </div>
+        )}
+
+        {/* Simulation banner */}
         <div className="bg-slate-900/90 border-b border-slate-800 py-2 px-4 text-center text-xs text-slate-400 flex items-center justify-center gap-4 flex-wrap">
-          <span className="font-semibold text-slate-300">اختبار ومحاكاة الخروج من المنطقة الآمنة:</span>
+          <span className="font-semibold text-slate-300">
+            اختبار ومحاكاة الخروج من المنطقة الآمنة:
+          </span>
           <button
             onClick={() => {
               const next = !isSimulatingOutside;
               setIsSimulatingOutside(next);
               if (!next) {
-                // Reset location back inside safe zone
                 const szLat = safeZones[0]?.latitude;
                 const szLng = safeZones[0]?.longitude;
                 const resetLoc = {
                   ...location,
-                  latitude: typeof szLat === 'number' && !isNaN(szLat) && Number.isFinite(szLat) ? szLat : 36.7538,
-                  longitude: typeof szLng === 'number' && !isNaN(szLng) && Number.isFinite(szLng) ? szLng : 3.0588,
-                  speed: 1.0,
+                  latitude:
+                    typeof szLat === 'number' && !isNaN(szLat) && Number.isFinite(szLat)
+                      ? szLat
+                      : 36.7538,
+                  longitude:
+                    typeof szLng === 'number' && !isNaN(szLng) && Number.isFinite(szLng)
+                      ? szLng
+                      : 3.0588,
+                  speed: 0,
                 };
                 setLocation(resetLoc);
                 GeofenceMonitor.getInstance().resetState();
@@ -368,7 +489,9 @@ export default function App() {
                 : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
             }`}
           >
-            {isSimulatingOutside ? 'محاكاة: الطفل خارج المنطقة (الآن)' : 'محاكاة: الطفل داخل المنطقة الآمنة'}
+            {isSimulatingOutside
+              ? 'محاكاة: الطفل خارج المنطقة (الآن)'
+              : 'محاكاة: الطفل داخل المنطقة الآمنة'}
           </button>
         </div>
 
@@ -395,9 +518,10 @@ export default function App() {
             onGenerateNewPairingCode={handleGenerateNewPairingCode}
             onPairWithCode={handlePairWithCode}
             onChildLocationChange={handleChildLocationChange}
-            onOpenSettings={() => setIsSettingsModalOpen(true)}
+            onOpenSettings={handleOpenSettings}
             activeTab={parentActiveTab}
             onTabChange={setParentActiveTab}
+            pendingOfflineCount={pendingOfflineCount}
           />
         ) : (
           <ChildView
