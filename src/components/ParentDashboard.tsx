@@ -60,6 +60,7 @@ interface ParentDashboardProps {
   onOpenSettings?: () => void;
   activeTab?: 'map' | 'zones' | 'alerts' | 'health' | 'settings' | 'pairing';
   onTabChange?: (tab: 'map' | 'zones' | 'alerts' | 'health' | 'settings' | 'pairing') => void;
+  pendingOfflineCount?: number;
 }
 
 export const ParentDashboard: React.FC<ParentDashboardProps> = ({
@@ -87,6 +88,7 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
   onOpenSettings,
   activeTab: externalActiveTab,
   onTabChange,
+  pendingOfflineCount = 0,
 }) => {
   const t = translations[lang];
 
@@ -330,6 +332,11 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
         >
           <Activity className="w-4 h-4" />
           {t.tabHealth}
+          {pendingOfflineCount > 0 && (
+            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-500 text-slate-900 text-[10px] font-black">
+              {pendingOfflineCount}
+            </span>
+          )}
         </button>
 
         <button
@@ -489,7 +496,7 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
           health={healthStatus}
           lang={lang}
           onSyncNow={onSyncNow}
-          pendingOfflineCount={0}
+          pendingOfflineCount={pendingOfflineCount}
         />
       )}
 
