@@ -7,6 +7,7 @@ export interface SmsDispatchResult {
   body: string;
   timestamp: number;
   error?: string;
+  method?: 'gateway' | 'sms_link' | 'simulated';
 }
 
 export class SmsService {
@@ -22,16 +23,10 @@ export class SmsService {
     return SmsService.instance;
   }
 
-  /**
-   * Formats Google Maps Link
-   */
   public generateMapsUrl(latitude: number, longitude: number): string {
     return `https://maps.google.com/?q=${latitude.toFixed(6)},${longitude.toFixed(6)}`;
   }
 
-  /**
-   * Constructs SMS Body for Safe Zone Exit / Emergency with explicit coordinates & Google Maps link
-   */
   public createAlertSmsBody(
     childName: string,
     reason: string,
@@ -41,18 +36,35 @@ export class SmsService {
     const acc = Math.round(location.accuracy);
     const latStr = location.latitude.toFixed(6);
     const lngStr = location.longitude.toFixed(6);
+    const timeStr = new Date().toLocaleString('ar-DZ', {
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+    });
 
-    return `🚨 [KidGuard DZ] تنبيه موقع الطفل: ${childName}
+    return `🚨 [KidGuard DZ] تنبيه موقع الطفل
+الاسم: ${childName}
 السبب: ${reason}
-📍 خط العرض (Latitude): ${latStr}
-📍 خط الطول (Longitude): ${lngStr}
+⏰ الوقت: ${timeStr}
+📍 خط العرض: ${latStr}
+📍 خط الطول: ${lngStr}
 🎯 الدقة: ±${acc}م
-🔗 رابط الخريطة: ${mapsLink}`;
+🔗 الخريطة: ${mapsLink}`;
   }
 
-  /**
-   * Dispatches SMS to Parent Phone with Callback Handling
-   */
+  /** Normalize 05xxxxxxxx → +2135xxxxxxxx */
+  public normalizePhone(phone: string): string {
+    let cleaned = phone.replace(/[\s\-()]/g, '');
+    if (cleaned.startsWith('0') && cleaned.length === 10) {
+      cleaned = '+213' + cleaned.slice(1);
+    }
+    if (!cleaned.startsWith('+') && cleaned.startsWith('213')) {
+      cleaned = '+' + cleaned;
+    }
+    return cleaned;
+  }
+
   public async sendAlertSms(
     phoneNumber: string,
     childName: string,
@@ -61,45 +73,61 @@ export class SmsService {
   ): Promise<SmsDispatchResult> {
     const messageId = `sms_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
     const body = this.createAlertSmsBody(childName, reason, location);
+    const cleanPhone = this.normalizePhone(phoneNumber);
 
-    console.log(`[SmsService] Dispatching SMS to ${phoneNumber}:`, body);
-
-    // Simulate SMS Native Plugin / Web SMS Gateway dispatch
-    try {
-      // Clean phone number
-      const cleanPhone = phoneNumber.trim();
-      if (!cleanPhone) {
-        throw new Error('Parent phone number not configured');
-      }
-
-      const result: SmsDispatchResult = {
-        success: true,
-        messageId,
-        phoneNumber: cleanPhone,
-        body,
-        timestamp: Date.now(),
-      };
-
-      this.dispatchLogs.unshift(result);
-      if (this.dispatchLogs.length > 50) {
-        this.dispatchLogs.pop();
-      }
-
-      return result;
-    } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to send SMS';
-      const failedResult: SmsDispatchResult = {
+    if (!cleanPhone) {
+      return {
         success: false,
         messageId,
         phoneNumber,
         body,
         timestamp: Date.now(),
-        error: errorMsg,
+        error: 'رقم هاتف الوالد غير مكوّن',
+        method: 'simulated',
       };
-
-      this.dispatchLogs.unshift(failedResult);
-      return failedResult;
     }
+
+    console.log(`[SmsService] Alert to ${cleanPhone}:`, body);
+
+    // Best interim for Algeria: open native SMS app on the phone
+    try {
+      if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+        const smsUri = `sms:${cleanPhone}?body=${encodeURIComponent(body)}`;
+        const link = document.createElement('a');
+        link.href = smsUri;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        const result: SmsDispatchResult = {
+          success: true,
+          messageId,
+          phoneNumber: cleanPhone,
+          body,
+          timestamp: Date.now(),
+          method: 'sms_link',
+        };
+        this.dispatchLogs.unshift(result);
+        if (this.dispatchLogs.length > 50) this.dispatchLogs.pop();
+        return result;
+      }
+    } catch (err) {
+      console.warn('Native SMS link failed', err);
+    }
+
+    // Desktop / fallback
+    const result: SmsDispatchResult = {
+      success: true,
+      messageId,
+      phoneNumber: cleanPhone,
+      body,
+      timestamp: Date.now(),
+      method: 'simulated',
+    };
+    this.dispatchLogs.unshift(result);
+    if (this.dispatchLogs.length > 50) this.dispatchLogs.pop();
+    return result;
   }
 
   public getLogs(): SmsDispatchResult[] {
