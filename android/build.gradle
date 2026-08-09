@@ -1,0 +1,61 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+buildscript {
+    
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.7.3'
+        classpath 'com.google.gms:google-services:4.4.4'
+
+        // NOTE: Do not place your application dependencies here; they belong
+        // in the individual module build.gradle files
+    }
+}
+
+apply from: "variables.gradle"
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    configurations.all {
+        exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk8"
+        exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk7"
+        resolutionStrategy {
+            force "androidx.core:core:${rootProject.ext.androidxCoreVersion}"
+            force "androidx.core:core-ktx:${rootProject.ext.androidxCoreVersion}"
+            force "androidx.activity:activity:${rootProject.ext.androidxActivityVersion}"
+            force "androidx.activity:activity-ktx:${rootProject.ext.androidxActivityVersion}"
+            force "androidx.appcompat:appcompat:${rootProject.ext.androidxAppCompatVersion}"
+            force "androidx.fragment:fragment:${rootProject.ext.androidxFragmentVersion}"
+            force "androidx.webkit:webkit:${rootProject.ext.androidxWebkitVersion}"
+        }
+    }
+}
+
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty('android')) {
+            project.android {
+                compileSdk = rootProject.ext.has('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 35
+                if (project.android.hasProperty('defaultConfig')) {
+                    project.android.defaultConfig {
+                        targetSdk = rootProject.ext.has('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 35
+                    }
+                }
+                compileOptions {
+                    sourceCompatibility = JavaVersion.VERSION_21
+                    targetCompatibility = JavaVersion.VERSION_21
+                }
+            }
+        }
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}

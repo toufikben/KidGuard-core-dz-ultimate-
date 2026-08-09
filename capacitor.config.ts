@@ -1,21 +1,9 @@
-import type { CapacitorConfig } from '@capacitor/core';
+import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'dz.kidguard.app',
-  appName: 'KidGuard DZ',
-  webDir: 'dist',
-  server: {
-    androidScheme: 'https',
-  },
-  // Critical for background location on Android (prevents halt after ~5 min)
-  android: {
-    useLegacyBridge: true,
-  },
-  plugins: {
-    Geolocation: {
-      // default options if needed
-    },
-  },
+  appId: 'com.kidguard.app',
+  appName: 'KidGuard',
+  webDir: 'dist'
 };
 
 export default config;
