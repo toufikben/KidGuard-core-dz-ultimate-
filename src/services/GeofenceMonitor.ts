@@ -151,12 +151,10 @@ export class GeofenceMonitor {
         this.consecutiveOutsideCount++;
       }
 
-      if (this.currentStatus === 'SAFE_INSIDE') {
-        if (instant1mExitEmergency || this.consecutiveOutsideCount >= this.CONSECUTIVE_REQUIRED_FOR_EXIT) {
-          this.currentStatus = 'EXIT_CONFIRMED';
-        } else {
-          this.currentStatus = 'EXIT_PENDING';
-        }
+      if (instant1mExitEmergency || this.consecutiveOutsideCount >= this.CONSECUTIVE_REQUIRED_FOR_EXIT) {
+        this.currentStatus = 'EXIT_CONFIRMED';
+      } else if (this.currentStatus === 'SAFE_INSIDE') {
+        this.currentStatus = 'EXIT_PENDING';
       }
     }
 

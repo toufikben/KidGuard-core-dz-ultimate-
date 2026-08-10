@@ -1,5 +1,8 @@
 import { OfflineEvent } from '../types';
 
+import { SyncApiService } from './SyncApiService';
+import { randomHex } from './SecurityUtils';
+
 export class OfflineQueueService {
   private static instance: OfflineQueueService;
   private queue: OfflineEvent[] = [];
@@ -52,7 +55,7 @@ export class OfflineQueueService {
     }
 
     const event: OfflineEvent = {
-      id: `evt_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+      id: `evt_${Date.now()}_${randomHex(8)}`,
       incidentId,
       kidId,
       zoneId,
@@ -90,15 +93,14 @@ export class OfflineQueueService {
       this.saveQueue();
 
       try {
-        // Simulate network API / Firestore dispatch
-        await new Promise((resolve) => setTimeout(resolve, 300));
-
+        await SyncApiService.getInstance().sendEvents([event]);
         event.status = 'SENT';
         syncedCount++;
       } catch (err) {
         event.retryCount++;
         event.status = 'FAILED';
         failedCount++;
+        console.warn('[OfflineQueueService] Event remains queued after sync failure', err);
       }
       this.saveQueue();
     }

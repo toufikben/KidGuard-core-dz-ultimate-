@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { AlertPolicyConfig, HealthStatus, DeviceRole } from '../types';
 import { Language, translations } from '../translations';
+import { hashPin } from '../services/SecurityUtils';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -50,6 +51,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Local state for policy form
   const [parentPhone, setParentPhone] = useState(alertPolicy.parentPhone);
   const [childName, setChildName] = useState(alertPolicy.childName);
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
   const [smsEnabled, setSmsEnabled] = useState(alertPolicy.smsEnabled);
   const [firstExitAlertEnabled, setFirstExitAlertEnabled] = useState(
     alertPolicy.firstExitAlertEnabled
@@ -84,8 +87,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  const handleSavePolicy = (e: React.FormEvent) => {
+  const handleSavePolicy = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (newPin || confirmPin) {
+      if (!/^\d{4,8}$/.test(newPin) || newPin !== confirmPin) {
+        window.alert('يجب أن يكون PIN من 4 إلى 8 أرقام وأن يتطابق الحقلان.');
+        return;
+      }
+    }
     onUpdateAlertPolicy({
       parentPhone: parentPhone.trim(),
       childName: childName.trim(),
@@ -102,7 +111,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       resetOnReturn,
       soundAlertEnabled,
       vibrationEnabled,
+      ...(newPin ? { parentPinHash: await hashPin(newPin) } : {}),
     });
+    setNewPin('');
+    setConfirmPin('');
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2500);
   };
@@ -281,6 +293,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <span className="text-[10px] text-slate-400 block mt-1 text-center">
                   {t.phoneDirNotice}
                 </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">PIN الوالد الجديد (اختياري)</label>
+                <input type="password" inputMode="numeric" autoComplete="new-password" value={newPin} onChange={(e) => setNewPin(e.target.value.replace(/\\D/g, '').slice(0, 8))} placeholder="4-8 أرقام" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-white font-mono text-center text-sm focus:outline-none focus:border-amber-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">تأكيد PIN الوالد</label>
+                <input type="password" inputMode="numeric" autoComplete="new-password" value={confirmPin} onChange={(e) => setConfirmPin(e.target.value.replace(/\\D/g, '').slice(0, 8))} placeholder="أعد الإدخال" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-white font-mono text-center text-sm focus:outline-none focus:border-amber-500" />
               </div>
             </div>
 

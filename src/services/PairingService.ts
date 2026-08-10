@@ -1,5 +1,7 @@
 import { DevicePairing } from '../types';
 
+import { randomDigits, randomHex } from './SecurityUtils';
+
 export class PairingService {
   private static instance: PairingService;
   private pairingInfo: DevicePairing;
@@ -26,16 +28,18 @@ export class PairingService {
       console.warn('Failed to load pairing info from localStorage', e);
     }
 
-    // Default pairing code
-    return {
-      kidId: 'kid_dz_8912',
-      childName: 'أمير / Amir',
-      deviceToken: 'tok_dz_77192831',
-      pairingCode: '892410',
-      pairedAt: Date.now(),
-      parentAccountId: 'parent_acc_001',
-      isPaired: true,
+    const generated: DevicePairing = {
+      kidId: `kid_${randomHex(12)}`,
+      childName: '',
+      deviceToken: `device_${randomHex(24)}`,
+      pairingCode: randomDigits(6),
+      pairedAt: 0,
+      parentAccountId: `parent_${randomHex(12)}`,
+      isPaired: false,
     };
+    this.pairingInfo = generated;
+    this.savePairingInfo();
+    return generated;
   }
 
   private savePairingInfo(): void {
@@ -51,7 +55,7 @@ export class PairingService {
   }
 
   public generateNewPairingCode(): string {
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const code = randomDigits(6);
     this.pairingInfo.pairingCode = code;
     this.savePairingInfo();
     return code;

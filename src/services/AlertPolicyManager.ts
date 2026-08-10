@@ -23,7 +23,7 @@ export class AlertPolicyManager {
     testModeEnabled: false,
     parentPhone: '',
     childName: 'طفل / Child',
-    parentPin: '',
+    parentPinHash: '',
   };
 
   private activeIncidentId: string | null = null;

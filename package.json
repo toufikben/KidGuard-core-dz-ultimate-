@@ -1,16 +1,18 @@
 {
-  "name": "react-example",
+  "name": "kidguard-core-dz",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
+    "server": "node server/index.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "audit": "npm audit --production",
-    "test:coverage": "echo \"No unit tests configured yet\""
+    "test": "tsx tests/core.test.ts",
+    "test:coverage": "npm test"
   },
   "dependencies": {
     "@capacitor/android": "^7.0.0",
@@ -19,11 +21,8 @@
     "@capacitor/geolocation": "^7.0.0",
     "@capacitor/local-notifications": "^7.0.0",
     "@capacitor-community/background-geolocation": "^1.2.24",
-    "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
-    "dotenv": "^17.2.3",
-    "express": "^4.21.2",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
@@ -33,7 +32,6 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^7.0.0",
-    "@types/express": "^4.17.21",
     "@types/leaflet": "^1.9.22",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",

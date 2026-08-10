@@ -60,7 +60,7 @@ export interface AlertPolicyConfig {
   testModeEnabled?: boolean;
   parentPhone: string;
   childName: string;
-  parentPin?: string; // Secret PIN code for parent dashboard & settings protection
+  parentPinHash?: string; // SHA-256 hash; the raw PIN is never persisted
 }
 
 export interface OfflineEvent {

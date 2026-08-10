@@ -22,6 +22,7 @@ import { PairingService } from './services/PairingService';
 import { OfflineQueueService } from './services/OfflineQueueService';
 import { BackgroundLocationService } from './services/BackgroundLocationService';
 import { SmsService } from './services/SmsService';
+import { verifyPin } from './services/SecurityUtils';
 
 const SAFE_ZONES_KEY = 'kidguard_safe_zones';
 const ROLE_KEY = 'kidguard_role';
@@ -478,25 +479,29 @@ export default function App() {
     }
   };
 
-  // PIN-protected open settings
-  const handleOpenSettings = () => {
-    const pin = alertPolicy.parentPin?.trim();
-    if (pin && pin.length >= 4 && !pinUnlocked) {
+  const handleRoleChange = async (nextRole: DeviceRole) => {
+    if (nextRole === role) return;
+    if (nextRole === 'PARENT' && alertPolicy.parentPinHash && !pinUnlocked) {
       const entered = window.prompt(
-        lang === 'ar'
-          ? 'أدخل رمز PIN الخاص بالوالد:'
-          : lang === 'fr'
-          ? 'Entrez le code PIN parent :'
-          : 'Enter parent PIN:'
+        lang === 'ar' ? 'أدخل رمز PIN الخاص بالوالد:' : lang === 'fr' ? 'Entrez le code PIN parent :' : 'Enter parent PIN:'
       );
-      if (entered !== pin) {
-        window.alert(
-          lang === 'ar'
-            ? 'رمز PIN غير صحيح'
-            : lang === 'fr'
-            ? 'Code PIN incorrect'
-            : 'Incorrect PIN'
-        );
+      if (!entered || !(await verifyPin(entered, alertPolicy.parentPinHash))) {
+        window.alert(lang === 'ar' ? 'رمز PIN غير صحيح' : lang === 'fr' ? 'Code PIN incorrect' : 'Incorrect PIN');
+        return;
+      }
+      setPinUnlocked(true);
+    }
+    setRole(nextRole);
+  };
+
+  // PIN-protected open settings
+  const handleOpenSettings = async () => {
+    if (alertPolicy.parentPinHash && !pinUnlocked) {
+      const entered = window.prompt(
+        lang === 'ar' ? 'أدخل رمز PIN الخاص بالوالد:' : lang === 'fr' ? 'Entrez le code PIN parent :' : 'Enter parent PIN:'
+      );
+      if (!entered || !(await verifyPin(entered, alertPolicy.parentPinHash))) {
+        window.alert(lang === 'ar' ? 'رمز PIN غير صحيح' : lang === 'fr' ? 'Code PIN incorrect' : 'Incorrect PIN');
         return;
       }
       setPinUnlocked(true);
@@ -513,7 +518,7 @@ export default function App() {
     >
       <Navbar
         role={role}
-        setRole={setRole}
+        setRole={handleRoleChange}
         lang={lang}
         setLang={setLang}
         theme={theme}
