@@ -21,6 +21,7 @@ import { AudioService } from './services/AudioService';
 import { PairingService } from './services/PairingService';
 import { OfflineQueueService } from './services/OfflineQueueService';
 import { BackgroundLocationService } from './services/BackgroundLocationService';
+import { SmsService } from './services/SmsService';
 
 const SAFE_ZONES_KEY = 'kidguard_safe_zones';
 const ROLE_KEY = 'kidguard_role';
@@ -446,6 +447,24 @@ export default function App() {
     runEvaluation(sosLoc, safeZones);
   };
 
+  const handleSendManualSms = async () => {
+    const phone = alertPolicy.parentPhone.trim();
+    if (!phone) {
+      window.alert(lang === 'ar' ? 'أضف رقم الوالد أولاً من الإعدادات.' : 'Add the parent phone number first in Settings.');
+      return;
+    }
+    const result = await SmsService.getInstance().sendAlertSms(
+      phone,
+      alertPolicy.childName,
+      'تنبيه يدوي من الطفل / Manual SOS',
+      { ...location, timestamp: Date.now() },
+      'CONFIRM'
+    );
+    if (!result.success) {
+      window.alert(result.error || (lang === 'ar' ? 'تعذر فتح تطبيق الرسائل.' : 'Could not open the SMS app.'));
+    }
+  };
+
   // PIN-protected open settings
   const handleOpenSettings = () => {
     const pin = alertPolicy.parentPin?.trim();
@@ -597,6 +616,7 @@ export default function App() {
             childName={alertPolicy.childName}
             lang={lang}
             onTriggerSos={handleTriggerSos}
+            onSendManualSms={handleSendManualSms}
             onTriggerSiren={handleToggleSiren}
             isSirenActive={isSirenActive}
           />

@@ -10,6 +10,7 @@ export class AlertPolicyManager {
     triggerEmergencyOnExit: true,
     instant1mExitEmergency: true,
     autoSmsLocationOnExit: true,
+    smsMode: 'CONFIRM',
     followUpIntervalMinutes: 5,
     maxFollowUpAlerts: 3,
     resetOnReturn: true,
@@ -167,7 +168,8 @@ export class AlertPolicyManager {
         this.config.parentPhone,
         this.config.childName,
         reason,
-        location
+        location,
+        this.config.smsMode === 'AUTO' ? 'AUTO' : 'CONFIRM'
       );
       smsSent = res.success;
     }

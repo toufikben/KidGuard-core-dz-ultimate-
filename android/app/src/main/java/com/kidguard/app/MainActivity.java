@@ -14,6 +14,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(DirectSmsPlugin.class);
         super.onCreate(savedInstanceState);
         maybeRequestNotificationPermission();
         maybeStartForegroundService();

@@ -6,6 +6,7 @@ import {
   Navigation,
   Lock,
   PhoneCall,
+  MessageSquareText,
   Volume2,
   VolumeX,
   CheckCircle2,
@@ -27,6 +28,7 @@ interface ChildViewProps {
   childName: string;
   lang: Language;
   onTriggerSos: () => void;
+  onSendManualSms: () => void;
   onTriggerSiren: () => void;
   isSirenActive: boolean;
 }
@@ -39,6 +41,7 @@ export const ChildView: React.FC<ChildViewProps> = ({
   childName,
   lang,
   onTriggerSos,
+  onSendManualSms,
   onTriggerSiren,
   isSirenActive,
 }) => {
@@ -155,6 +158,17 @@ export const ChildView: React.FC<ChildViewProps> = ({
             <span>SOS</span>
           </button>
         )}
+
+        <button
+          onClick={onSendManualSms}
+          className="mx-auto inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-3 text-xs font-bold text-emerald-300 transition-all hover:bg-emerald-500/20 active:scale-95"
+        >
+          <MessageSquareText className="h-4 w-4" />
+          <span>إرسال موقعي للوالد الآن</span>
+        </button>
+        <p className="text-[11px] text-slate-500">
+          يفتح رسالة SMS جاهزة بالموقع الحالي للتأكيد قبل الإرسال.
+        </p>
       </div>
 
       {/* 3. Siren Toggle */}

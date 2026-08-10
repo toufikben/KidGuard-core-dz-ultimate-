@@ -1,4 +1,11 @@
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { LocationPoint } from '../types';
+
+interface DirectSmsPlugin {
+  send(options: { phoneNumber: string; message: string }): Promise<{ sent: boolean }>;
+}
+
+const DirectSms = registerPlugin<DirectSmsPlugin>('DirectSms');
 
 export interface SmsDispatchResult {
   success: boolean;
@@ -7,8 +14,10 @@ export interface SmsDispatchResult {
   body: string;
   timestamp: number;
   error?: string;
-  method?: 'gateway' | 'sms_link' | 'simulated';
+  method?: 'direct_sms' | 'sms_link' | 'simulated';
 }
+
+export type SmsSendMode = 'AUTO' | 'CONFIRM';
 
 export class SmsService {
   private static instance: SmsService;
@@ -53,7 +62,7 @@ export class SmsService {
 🔗 الخريطة: ${mapsLink}`;
   }
 
-  /** Normalize 05xxxxxxxx → +2135xxxxxxxx */
+  /** Normalize 05xxxxxxxx or 2135xxxxxxxx to +2135xxxxxxxx. */
   public normalizePhone(phone: string): string {
     let cleaned = phone.replace(/[\s\-()]/g, '');
     if (cleaned.startsWith('0') && cleaned.length === 10) {
@@ -65,11 +74,56 @@ export class SmsService {
     return cleaned;
   }
 
+  private remember(result: SmsDispatchResult): SmsDispatchResult {
+    this.dispatchLogs.unshift(result);
+    if (this.dispatchLogs.length > 50) this.dispatchLogs.pop();
+    return result;
+  }
+
+  private openSmsComposer(
+    phoneNumber: string,
+    body: string,
+    messageId: string
+  ): SmsDispatchResult {
+    try {
+      if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+        const smsUri = `sms:${phoneNumber}?body=${encodeURIComponent(body)}`;
+        const link = document.createElement('a');
+        link.href = smsUri;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        return this.remember({
+          success: true,
+          messageId,
+          phoneNumber,
+          body,
+          timestamp: Date.now(),
+          method: 'sms_link',
+        });
+      }
+    } catch (err) {
+      console.warn('[SmsService] SMS composer failed', err);
+    }
+
+    return this.remember({
+      success: false,
+      messageId,
+      phoneNumber,
+      body,
+      timestamp: Date.now(),
+      error: 'تعذر فتح تطبيق الرسائل على هذا الجهاز',
+      method: 'simulated',
+    });
+  }
+
   public async sendAlertSms(
     phoneNumber: string,
     childName: string,
     reason: string,
-    location: LocationPoint
+    location: LocationPoint,
+    mode: SmsSendMode = 'CONFIRM'
   ): Promise<SmsDispatchResult> {
     const messageId = `sms_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
     const body = this.createAlertSmsBody(childName, reason, location);
@@ -87,47 +141,27 @@ export class SmsService {
       };
     }
 
-    console.log(`[SmsService] Alert to ${cleanPhone}:`, body);
-
-    // Best interim for Algeria: open native SMS app on the phone
-    try {
-      if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-        const smsUri = `sms:${cleanPhone}?body=${encodeURIComponent(body)}`;
-        const link = document.createElement('a');
-        link.href = smsUri;
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        const result: SmsDispatchResult = {
-          success: true,
+    if (mode === 'AUTO' && Capacitor.isNativePlatform()) {
+      try {
+        const result = await DirectSms.send({
+          phoneNumber: cleanPhone,
+          message: body,
+        });
+        return this.remember({
+          success: result.sent,
           messageId,
           phoneNumber: cleanPhone,
           body,
           timestamp: Date.now(),
-          method: 'sms_link',
-        };
-        this.dispatchLogs.unshift(result);
-        if (this.dispatchLogs.length > 50) this.dispatchLogs.pop();
-        return result;
+          method: 'direct_sms',
+          ...(result.sent ? {} : { error: 'لم يؤكد النظام إرسال الرسالة' }),
+        });
+      } catch (error) {
+        console.warn('[SmsService] direct SMS unavailable; opening composer', error);
       }
-    } catch (err) {
-      console.warn('Native SMS link failed', err);
     }
 
-    // Desktop / fallback
-    const result: SmsDispatchResult = {
-      success: true,
-      messageId,
-      phoneNumber: cleanPhone,
-      body,
-      timestamp: Date.now(),
-      method: 'simulated',
-    };
-    this.dispatchLogs.unshift(result);
-    if (this.dispatchLogs.length > 50) this.dispatchLogs.pop();
-    return result;
+    return this.openSmsComposer(cleanPhone, body, messageId);
   }
 
   public getLogs(): SmsDispatchResult[] {

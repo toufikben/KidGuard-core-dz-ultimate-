@@ -47,7 +47,8 @@ export interface AlertPolicyConfig {
   firstExitAlertEnabled: boolean;
   triggerEmergencyOnExit: boolean; // Automatic full emergency siren trigger on exit
   instant1mExitEmergency?: boolean; // Immediate full danger mode on exiting safe zone even by 1 meter
-  autoSmsLocationOnExit?: boolean; // Automatic instant SMS with GPS location link immediately upon exit
+  autoSmsLocationOnExit?: boolean; // Automatic alert on danger/exit
+  smsMode?: 'AUTO' | 'CONFIRM'; // AUTO uses native direct SMS when permission is granted; CONFIRM opens the composer
   followUpIntervalMinutes: number; // e.g. 5
   maxFollowUpAlerts: number; // e.g. 3
   resetOnReturn: boolean;

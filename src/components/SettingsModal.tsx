@@ -63,6 +63,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [autoSmsLocationOnExit, setAutoSmsLocationOnExit] = useState(
     alertPolicy.autoSmsLocationOnExit ?? true
   );
+  const [smsMode, setSmsMode] = useState<'AUTO' | 'CONFIRM'>(
+    alertPolicy.smsMode ?? 'CONFIRM'
+  );
   const [followUpIntervalMinutes, setFollowUpIntervalMinutes] = useState(
     alertPolicy.followUpIntervalMinutes
   );
@@ -89,6 +92,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       triggerEmergencyOnExit,
       instant1mExitEmergency,
       autoSmsLocationOnExit,
+      smsMode,
       followUpIntervalMinutes,
       maxFollowUpAlerts,
       resetOnReturn,
@@ -350,6 +354,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className="w-5 h-5 rounded text-emerald-600 focus:ring-emerald-500 bg-slate-800 border-emerald-700 shrink-0"
                 />
               </label>
+
+              {autoSmsLocationOnExit && (
+                <div className="rounded-xl border border-blue-500/30 bg-blue-950/30 p-3 space-y-2">
+                  <p className="text-xs font-bold text-blue-200">طريقة إرسال SMS عند الخطر</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <label className={`flex items-center gap-2 rounded-lg border p-2.5 cursor-pointer ${smsMode === 'CONFIRM' ? 'border-blue-400 bg-blue-500/10' : 'border-slate-700 bg-slate-900/60'}`}>
+                      <input type="radio" name="smsMode" checked={smsMode === 'CONFIRM'} onChange={() => setSmsMode('CONFIRM')} />
+                      <span className="text-[11px] text-slate-200">فتح الرسالة للتأكيد</span>
+                    </label>
+                    <label className={`flex items-center gap-2 rounded-lg border p-2.5 cursor-pointer ${smsMode === 'AUTO' ? 'border-amber-400 bg-amber-500/10' : 'border-slate-700 bg-slate-900/60'}`}>
+                      <input type="radio" name="smsMode" checked={smsMode === 'AUTO'} onChange={() => setSmsMode('AUTO')} />
+                      <span className="text-[11px] text-slate-200">إرسال تلقائي من Android</span>
+                    </label>
+                  </div>
+                  <p className="text-[10px] leading-5 text-blue-200/70">الإرسال التلقائي يحتاج صلاحية SMS ويعمل عند تثبيت التطبيق مباشرة على Android. عند رفض الصلاحية سيعود التطبيق إلى رسالة جاهزة للتأكيد.</p>
+                </div>
+              )}
 
               <label className="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-700/60 cursor-pointer hover:border-slate-600 transition-colors">
                 <div className="flex items-center gap-2.5">
