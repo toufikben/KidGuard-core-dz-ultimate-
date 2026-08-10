@@ -5,7 +5,6 @@ import {
   MapPin,
   Bell,
   Activity,
-  Settings,
   Smartphone,
   Plus,
   Volume2,
@@ -264,14 +263,6 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
           >
             <RefreshCw className="w-4 h-4" />
             {t.sendImmediatePing}
-          </button>
-
-          <button
-            onClick={() => (onOpenSettings ? onOpenSettings() : setActiveTab('settings'))}
-            className="p-2.5 rounded-xl bg-slate-800 border border-slate-700 hover:border-amber-500 text-amber-400 hover:text-white flex items-center justify-center transition-all shadow-sm shrink-0"
-            title={t.tabSettings}
-          >
-            <Settings className="w-4 h-4" />
           </button>
 
           <a

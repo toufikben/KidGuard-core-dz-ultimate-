@@ -100,11 +100,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           {onOpenSettings && (
             <button
               onClick={onOpenSettings}
-              className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 hover:border-amber-400 flex items-center gap-1.5 text-xs font-extrabold transition-all active:scale-95 shadow-md group shrink-0"
+              className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 hover:border-amber-400 flex items-center justify-center transition-all active:scale-95 shadow-md group shrink-0"
               title={t.tabSettings || 'الإعدادات'}
             >
               <Settings className="w-4 h-4 text-amber-400 group-hover:rotate-90 transition-transform duration-300" />
-              <span className="font-extrabold">{t.tabSettings || 'الإعدادات'}</span>
             </button>
           )}
 
