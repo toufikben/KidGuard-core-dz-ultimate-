@@ -1,5 +1,41 @@
 @import "tailwindcss";
 
+:root {
+  color-scheme: dark;
+  background: #020617;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 0;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+body {
+  min-height: 100dvh;
+  background: #020617;
+  overscroll-behavior-x: none;
+}
+
+#root {
+  min-height: 100dvh;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  box-sizing: border-box;
+}
+
+@media (max-width: 639px) {
+  #root {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
 /* Force LTR direction for phone input numbers in Arabic RTL mode */
 .ltr-input {
   direction: ltr !important;

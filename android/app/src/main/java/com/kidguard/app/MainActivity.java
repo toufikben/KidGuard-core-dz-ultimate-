@@ -3,10 +3,12 @@ package com.kidguard.app;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.view.WindowCompat;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -16,8 +18,19 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(DirectSmsPlugin.class);
         super.onCreate(savedInstanceState);
+        configureSystemBars();
         maybeRequestNotificationPermission();
         maybeStartForegroundService();
+    }
+
+    private void configureSystemBars() {
+        // Keep the WebView below the system bars on Android devices that enforce
+        // edge-to-edge, preventing the header and bottom navigation from being
+        // covered by status/navigation icons.
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), true);
+        getWindow().setStatusBarColor(Color.rgb(2, 6, 23));
+        getWindow().setNavigationBarColor(Color.rgb(2, 6, 23));
+        getWindow().getDecorView().setSystemUiVisibility(0);
     }
 
     /**

@@ -507,7 +507,7 @@ export default function App() {
   return (
     <div
       dir={lang === 'ar' ? 'rtl' : 'ltr'}
-      className={`min-h-screen font-sans bg-slate-950 text-slate-100 transition-colors ${
+      className={`min-h-[100dvh] font-sans bg-slate-950 text-slate-100 transition-colors ${
         theme === 'light' ? 'light-mode-override' : ''
       }`}
     >
@@ -558,27 +558,26 @@ export default function App() {
           <button
             onClick={() => {
               const next = !isSimulatingOutside;
+              const szLat = safeZones[0]?.latitude;
+              const szLng = safeZones[0]?.longitude;
+              const baseLat =
+                typeof szLat === 'number' && Number.isFinite(szLat) ? szLat : 36.7538;
+              const baseLng =
+                typeof szLng === 'number' && Number.isFinite(szLng) ? szLng : 3.0588;
+
               setIsSimulatingOutside(next);
-              if (!next) {
-                const szLat = safeZones[0]?.latitude;
-                const szLng = safeZones[0]?.longitude;
-                const resetLoc = {
-                  ...location,
-                  latitude:
-                    typeof szLat === 'number' && !isNaN(szLat) && Number.isFinite(szLat)
-                      ? szLat
-                      : 36.7538,
-                  longitude:
-                    typeof szLng === 'number' && !isNaN(szLng) && Number.isFinite(szLng)
-                      ? szLng
-                      : 3.0588,
-                  speed: 0,
-                };
-                setLocation(resetLoc);
-                GeofenceMonitor.getInstance().resetState();
-                RiskEngine.getInstance().resetEngine();
-                runEvaluation(resetLoc, safeZones);
-              }
+              GeofenceMonitor.getInstance().resetState();
+              RiskEngine.getInstance().resetEngine();
+
+              const simulatedLoc = {
+                ...location,
+                latitude: next ? baseLat + 0.025 : baseLat,
+                longitude: next ? baseLng + 0.025 : baseLng,
+                speed: next ? 4 : 0,
+                timestamp: Date.now(),
+              };
+              setLocation(simulatedLoc);
+              runEvaluation(simulatedLoc, safeZones);
             }}
             className={`px-3 py-1 rounded-full text-xs font-bold transition-all border ${
               isSimulatingOutside
@@ -587,7 +586,7 @@ export default function App() {
             }`}
           >
             {isSimulatingOutside
-              ? 'محاكاة: الطفل خارج المنطقة (الآن)'
+              ? 'إيقاف المحاكاة وإعادة الطفل للمنطقة'
               : 'محاكاة: الطفل داخل المنطقة الآمنة'}
           </button>
         </div>
