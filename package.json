@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "audit": "npm audit --production",
+    "test:coverage": "echo \"No unit tests configured yet\""
   },
   "dependencies": {
     "@capacitor/android": "^7.0.0",

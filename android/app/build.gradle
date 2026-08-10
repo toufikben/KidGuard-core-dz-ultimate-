@@ -27,11 +27,19 @@ android {
     }
     signingConfigs {
         release {
-            if (System.getenv("KEYSTORE_FILE") && file(System.getenv("KEYSTORE_FILE")).exists()) {
-                storeFile file(System.getenv("KEYSTORE_FILE"))
-                storePassword System.getenv("KEYSTORE_PASSWORD")
-                keyAlias System.getenv("KEY_ALIAS")
-                keyPassword System.getenv("KEY_PASSWORD")
+            def keystorePath = System.getenv("KEYSTORE_FILE")
+            if (keystorePath) {
+                // If path is relative, resolve from project root (android/app)
+                def ksFile = file(keystorePath)
+                if (!ksFile.exists()) {
+                    ksFile = rootProject.file("app/" + keystorePath)
+                }
+                if (ksFile.exists()) {
+                    storeFile ksFile
+                    storePassword System.getenv("KEYSTORE_PASSWORD")
+                    keyAlias System.getenv("KEY_ALIAS")
+                    keyPassword System.getenv("KEY_PASSWORD")
+                }
             }
         }
     }

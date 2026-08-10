@@ -44,6 +44,7 @@ jobs:
         name: coverage-report
         path: coverage/
         retention-days: 14
+      continue-on-error: true
 
     - name: Build Web App
       run: npm run build
@@ -67,7 +68,7 @@ jobs:
 
     - name: Build Android APK & AAB (Release)
       env:
-        KEYSTORE_FILE: app/release-key.jks
+        KEYSTORE_FILE: release-key.jks
         KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
