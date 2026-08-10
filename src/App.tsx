@@ -535,7 +535,7 @@ export default function App() {
         role={role}
       />
 
-      <main className="pb-12">
+      <main className="pb-0 sm:pb-6">
         {/* GPS permission / error banner */}
         {geoError && (
           <div className="bg-amber-900/90 border-b border-amber-700 py-2 px-4 text-center text-xs text-amber-100">
