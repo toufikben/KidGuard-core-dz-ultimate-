@@ -48,7 +48,8 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release.storeFile != null ? signingConfigs.release : signingConfigs.debug
+            // Release builds must use the production keystore supplied by CI secrets.
+            signingConfig signingConfigs.release
         }
     }
 }

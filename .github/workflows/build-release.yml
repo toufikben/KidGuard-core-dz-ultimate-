@@ -52,12 +52,26 @@ jobs:
     - name: Sync Capacitor Android
       run: npx cap sync android
 
+    - name: Validate Android signing secrets
+      env:
+        KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      run: |
+        test -n "$KEYSTORE_BASE64" || { echo "Missing KEYSTORE_BASE64" >&2; exit 1; }
+        test -n "$KEYSTORE_PASSWORD" || { echo "Missing KEYSTORE_PASSWORD" >&2; exit 1; }
+        test -n "$KEY_ALIAS" || { echo "Missing KEY_ALIAS" >&2; exit 1; }
+        test -n "$KEY_PASSWORD" || { echo "Missing KEY_PASSWORD" >&2; exit 1; }
+
     - name: Decode Keystore from GitHub Secrets
-      if: env.KEYSTORE_BASE64 != ''
       env:
         KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
       run: |
-        echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release-key.jks
+        set -euo pipefail
+        umask 077
+        printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/app/release-key.jks
+        test -s android/app/release-key.jks
 
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
