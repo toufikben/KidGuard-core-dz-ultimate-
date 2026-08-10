@@ -1,6 +1,7 @@
 import { AlertPolicyConfig, LocationPoint, LoggedAlert, RiskAssessment } from '../types';
 import { SmsService } from './SmsService';
 import { AudioService } from './AudioService';
+import { OfflineQueueService } from './OfflineQueueService';
 
 export class AlertPolicyManager {
   private static instance: AlertPolicyManager;
@@ -17,6 +18,9 @@ export class AlertPolicyManager {
     soundAlertEnabled: true,
     vibrationEnabled: true,
     smsEnabled: true,
+    batterySmsEnabled: true,
+    batteryAlertThreshold: 15,
+    testModeEnabled: false,
     parentPhone: '',
     childName: 'طفل / Child',
     parentPin: '',
@@ -26,6 +30,7 @@ export class AlertPolicyManager {
   private alertSentCount: number = 0;
   private lastAlertTimestamp: number = 0;
   private alertHistory: LoggedAlert[] = [];
+  private lastBatteryAlertTimestamp = 0;
 
   private constructor() {
     this.loadConfig();
@@ -172,6 +177,14 @@ export class AlertPolicyManager {
         this.config.smsMode === 'AUTO' ? 'AUTO' : 'CONFIRM'
       );
       smsSent = res.success;
+      if (!res.success && this.config.smsMode === 'AUTO') {
+        OfflineQueueService.getInstance().enqueueEvent(
+          'RISK_HIGH',
+          incidentId,
+          'child-local',
+          { kind: 'sms', phoneNumber: this.config.parentPhone, childName: this.config.childName, reason, location },
+        );
+      }
     }
 
     const mapsLink = SmsService.getInstance().generateMapsUrl(
@@ -198,6 +211,30 @@ export class AlertPolicyManager {
     this.saveAlertHistory();
 
     return loggedAlert;
+  }
+
+  public async sendBatteryAlert(location: LocationPoint, batteryLevel: number): Promise<boolean> {
+    const threshold = this.config.batteryAlertThreshold ?? 15;
+    if (!this.config.batterySmsEnabled || batteryLevel > threshold || !this.config.parentPhone) return false;
+    const now = Date.now();
+    if (now - this.lastBatteryAlertTimestamp < 6 * 60 * 60 * 1000) return false;
+    this.lastBatteryAlertTimestamp = now;
+    const result = await SmsService.getInstance().sendAlertSms(
+      this.config.parentPhone,
+      this.config.childName,
+      `انخفاض حاد في البطارية: ${batteryLevel}%`,
+      location,
+      this.config.smsMode === 'AUTO' ? 'AUTO' : 'CONFIRM'
+    );
+    if (!result.success && this.config.smsMode === 'AUTO') {
+      OfflineQueueService.getInstance().enqueueEvent(
+        'BATTERY_CRITICAL',
+        `battery_${now}`,
+        'child-local',
+        { kind: 'sms', phoneNumber: this.config.parentPhone, childName: this.config.childName, reason: `البطارية ${batteryLevel}%`, location },
+      );
+    }
+    return result.success;
   }
 
   public getAlertHistory(): LoggedAlert[] {

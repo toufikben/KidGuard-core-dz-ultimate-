@@ -66,6 +66,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [smsMode, setSmsMode] = useState<'AUTO' | 'CONFIRM'>(
     alertPolicy.smsMode ?? 'CONFIRM'
   );
+  const [batterySmsEnabled, setBatterySmsEnabled] = useState(alertPolicy.batterySmsEnabled ?? true);
+  const [batteryAlertThreshold, setBatteryAlertThreshold] = useState(alertPolicy.batteryAlertThreshold ?? 15);
   const [followUpIntervalMinutes, setFollowUpIntervalMinutes] = useState(
     alertPolicy.followUpIntervalMinutes
   );
@@ -93,6 +95,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       instant1mExitEmergency,
       autoSmsLocationOnExit,
       smsMode,
+      batterySmsEnabled,
+      batteryAlertThreshold,
       followUpIntervalMinutes,
       maxFollowUpAlerts,
       resetOnReturn,
@@ -370,6 +374,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                   <p className="text-[10px] leading-5 text-blue-200/70">الإرسال التلقائي يحتاج صلاحية SMS ويعمل عند تثبيت التطبيق مباشرة على Android. عند رفض الصلاحية سيعود التطبيق إلى رسالة جاهزة للتأكيد.</p>
                 </div>
+              )}
+
+              <label className="flex items-center justify-between p-3 rounded-xl bg-amber-950/30 border border-amber-500/30 cursor-pointer hover:border-amber-400 transition-colors">
+                <div className="flex items-center gap-2.5">
+                  <Smartphone className="w-4 h-4 text-amber-400" />
+                  <div>
+                    <span className="text-xs font-bold text-amber-200 block">تنبيه البطارية المنخفضة عبر SMS</span>
+                    <span className="text-[10px] text-amber-200/70 block">إرسال تنبيه مرة كل 6 ساعات عند بلوغ العتبة</span>
+                  </div>
+                </div>
+                <input type="checkbox" checked={batterySmsEnabled} onChange={(e) => setBatterySmsEnabled(e.target.checked)} className="w-4 h-4 rounded text-amber-600 bg-slate-800 border-amber-700" />
+              </label>
+
+              {batterySmsEnabled && (
+                <label className="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-700/60">
+                  <span className="text-xs font-bold text-slate-200">عتبة تنبيه البطارية (%)</span>
+                  <input type="number" min={5} max={50} value={batteryAlertThreshold} onChange={(e) => setBatteryAlertThreshold(Math.min(50, Math.max(5, Number(e.target.value) || 15)))} className="w-20 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-center text-sm font-mono text-white" />
+                </label>
               )}
 
               <label className="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-700/60 cursor-pointer hover:border-slate-600 transition-colors">

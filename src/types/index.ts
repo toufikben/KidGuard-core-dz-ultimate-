@@ -55,6 +55,9 @@ export interface AlertPolicyConfig {
   soundAlertEnabled: boolean;
   vibrationEnabled: boolean;
   smsEnabled: boolean;
+  batterySmsEnabled?: boolean;
+  batteryAlertThreshold?: number;
+  testModeEnabled?: boolean;
   parentPhone: string;
   childName: string;
   parentPin?: string; // Secret PIN code for parent dashboard & settings protection

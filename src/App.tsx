@@ -352,6 +352,19 @@ export default function App() {
     };
   }, [isSimulatingOutside, safeZones, runEvaluation, lang]);
 
+  useEffect(() => {
+    const checkDeviceHealth = () => {
+      const diagnostics = healthMonitor.getHealthDiagnostics(location);
+      setHealthStatus(diagnostics);
+      if (diagnostics.batteryLevel <= (alertPolicy.batteryAlertThreshold ?? 15)) {
+        void alertPolicyManager.sendBatteryAlert(location, diagnostics.batteryLevel);
+      }
+    };
+    checkDeviceHealth();
+    const healthTimer = window.setInterval(checkDeviceHealth, 60_000);
+    return () => window.clearInterval(healthTimer);
+  }, [location, alertPolicy.batteryAlertThreshold, alertPolicy.batterySmsEnabled, alertPolicy.smsMode]);
+
   const handleChildLocationChange = useCallback(
     (lat: number, lng: number) => {
       const updatedLoc: LocationPoint = {
