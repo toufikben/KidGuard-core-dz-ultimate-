@@ -440,22 +440,21 @@ export const MapView: React.FC<MapViewProps> = ({
   };
 
   return (
-    <div className="relative w-full h-full min-h-[420px] rounded-2xl overflow-hidden shadow-inner border border-slate-200 dark:border-slate-800">
+    <div className="relative w-full h-full min-h-0 rounded-2xl overflow-hidden shadow-inner border border-slate-200 dark:border-slate-800">
       <div ref={mapContainerRef} className="w-full h-full z-0" />
 
-      {/* Map Side Action Buttons (Separated, Enlarged & Vertical) */}
-      <div className="absolute top-3 right-3 rtl:right-auto rtl:left-3 z-10 flex flex-col gap-2.5 pointer-events-auto">
+      {/* Compact map controls: one consistent column on the right */}
+      <div className="absolute top-3 right-3 left-auto z-10 flex flex-col items-end gap-2 pointer-events-auto">
         
         {/* Recenter on Child Main Action Button */}
         <button
           onClick={handleRecenterOnChild}
-          className="h-11 sm:h-12 px-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl border border-emerald-400/60 shadow-2xl backdrop-blur-md flex items-center gap-2 text-xs font-black transition-all active:scale-95 group shrink-0"
+          className="h-11 w-11 sm:h-12 sm:w-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl border border-emerald-400/60 shadow-2xl backdrop-blur-md flex items-center justify-center transition-all active:scale-95 group shrink-0"
           title="إعادة التركيز المباشر والتكبير على مكان الطفل"
         >
           <div className="p-1 rounded-xl bg-white/20 text-white group-hover:scale-110 transition-transform">
             <LocateFixed className="w-5 h-5" />
           </div>
-          <span className="font-extrabold whitespace-nowrap">📍 التركيز</span>
         </button>
 
         {/* Zoom In (+) Button */}
@@ -488,22 +487,19 @@ export const MapView: React.FC<MapViewProps> = ({
         {/* Auto-Follow Toggle Button */}
         <button
           onClick={() => setIsAutoFollow(!isAutoFollow)}
-          className={`h-11 px-3 rounded-2xl border shadow-2xl backdrop-blur-md flex items-center justify-center gap-1.5 text-xs font-extrabold transition-all active:scale-95 shrink-0 ${
+          className={`h-11 w-11 sm:h-12 sm:w-12 rounded-2xl border shadow-2xl backdrop-blur-md flex items-center justify-center text-xs font-extrabold transition-all active:scale-95 shrink-0 ${
             isAutoFollow
               ? 'bg-emerald-950/95 border-emerald-500 text-emerald-300'
               : 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 border-slate-700/80'
           }`}
           title={isAutoFollow ? 'إيقاف التتبع التلقائي' : 'تفعيل التتبع التلقائي للتحرك مع الطفل'}
         >
-          <span className="text-sm">🔄</span>
-          <span className="text-[11px] font-extrabold">
-            {isAutoFollow ? 'تتبع' : 'حر'}
-          </span>
+          <span className="text-base" aria-hidden="true">🔄</span>
         </button>
       </div>
 
       {/* Collapsible Map Legend (Minimizable to save map area) */}
-      <div className="absolute top-3 left-3 rtl:left-auto rtl:right-3 z-10 pointer-events-auto">
+      <div className="absolute top-3 left-3 right-auto z-10 pointer-events-auto">
         {!isLegendOpen ? (
           /* Small Compact Legend Trigger Pill */
           <button

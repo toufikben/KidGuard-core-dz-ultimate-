@@ -345,7 +345,7 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
 
       {/* 3. Tab Content View */}
       {activeTab === 'map' && (
-        <div className="h-[520px] rounded-3xl overflow-hidden shadow-2xl">
+        <div className="h-[clamp(390px,58svh,520px)] sm:h-[520px] rounded-3xl overflow-hidden shadow-2xl">
           <MapView
             location={location}
             safeZones={safeZones}
