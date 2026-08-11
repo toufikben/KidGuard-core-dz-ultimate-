@@ -1,6 +1,8 @@
 import { GeofenceMonitor } from '../src/services/GeofenceMonitor';
 import { RiskEngine } from '../src/services/RiskEngine';
 import { LocationPoint, SafeZone } from '../src/types';
+import { HealthMonitorService } from '../src/services/HealthMonitorService';
+import { SecurityChecker } from '../src/services/SecurityChecker';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -80,5 +82,46 @@ const assessment = risk.assessRisk(
 assert(assessment.riskScore === 100, 'Critical risk inputs must be capped at 100');
 assert(assessment.riskLevel === 'CRITICAL', 'Critical risk inputs must produce CRITICAL');
 assert(assessment.state === 'EMERGENCY', 'Instant emergency mode must produce EMERGENCY');
+
+// GPS loss must be represented as a health/security condition, not an emergency.
+const security = SecurityChecker.getInstance();
+const missingGps = security.checkSecurity(null, true);
+assert(missingGps.gpsDisabled, 'Missing GPS fix must be reported as disabled/unavailable');
+assert(!missingGps.tamperDetected, 'Missing GPS must not be treated as tampering');
+
+const health = HealthMonitorService.getInstance();
+health.setPermissionStatus('location', true);
+const unavailableHealth = health.getHealthDiagnostics(null);
+assert(!unavailableHealth.gpsActive, 'Health diagnostics must mark GPS inactive when no fix exists');
+
+health.setPermissionStatus('location', false);
+const deniedHealth = health.getHealthDiagnostics(insideLocation);
+assert(!deniedHealth.gpsActive, 'Revoked location permission must keep GPS inactive');
+
+// A valid fix after an interruption must restore GPS health without creating an alert.
+health.setPermissionStatus('location', true);
+health.updateLastLocationTime(insideLocation.timestamp);
+const restoredHealth = health.getHealthDiagnostics(insideLocation);
+assert(restoredHealth.gpsActive, 'A valid location fix must restore GPS health');
+assert(restoredHealth.lastLocationTime === insideLocation.timestamp, 'GPS recovery must update last location time');
+
+// Poor accuracy must not count as a confirmed exit or trigger emergency behavior.
+geofence.resetState();
+const weakSignalLocation: LocationPoint = { ...outsideLocation, accuracy: 250 };
+const weakSignalEval = geofence.evaluate(weakSignalLocation, [zone], false);
+assert(weakSignalEval.status === 'EXIT_PENDING', 'Weak GPS signal must remain pending');
+assert(weakSignalEval.consecutiveOutsideCount === 0, 'Weak GPS signal must not count toward exit confirmation');
+risk.resetEngine();
+const weakSignalAssessment = risk.assessRisk(
+  weakSignalLocation,
+  weakSignalEval,
+  85,
+  false,
+  false,
+  'en',
+  false
+);
+assert(weakSignalAssessment.state === 'MONITORING', 'Weak GPS signal must remain MONITORING');
+assert(weakSignalAssessment.riskScore === 0, 'Weak GPS signal must not raise risk');
 
 console.log('core unit tests passed');

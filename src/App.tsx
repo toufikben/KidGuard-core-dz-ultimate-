@@ -152,7 +152,7 @@ export default function App() {
       const geofenceEval = geofenceMonitor.evaluate(
         currentLoc,
         zones,
-        currentPolicy.instant1mExitEmergency ?? true
+        currentPolicy.instant1mExitEmergency ?? false
       );
 
       const riskEngine = RiskEngine.getInstance();
@@ -163,7 +163,7 @@ export default function App() {
         healthStatus.tamperDetected,
         currentLoc.isMockLocation || false,
         lang,
-        currentPolicy.instant1mExitEmergency ?? true
+        currentPolicy.instant1mExitEmergency ?? false
       );
 
       const loggedAlert = await alertPolicyManager.evaluateAndDispatch(
