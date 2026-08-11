@@ -3,6 +3,9 @@ import { RiskEngine } from '../src/services/RiskEngine';
 import { LocationPoint, SafeZone } from '../src/types';
 import { HealthMonitorService } from '../src/services/HealthMonitorService';
 import { SecurityChecker } from '../src/services/SecurityChecker';
+import { OfflineQueueService } from '../src/services/OfflineQueueService';
+import { SyncApiService } from '../src/services/SyncApiService';
+import { OfflineEvent } from '../src/types';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -123,5 +126,67 @@ const weakSignalAssessment = risk.assessRisk(
 );
 assert(weakSignalAssessment.state === 'MONITORING', 'Weak GPS signal must remain MONITORING');
 assert(weakSignalAssessment.riskScore === 0, 'Weak GPS signal must not raise risk');
+
+// Offline synchronization must retain events during network/server failures and recover safely.
+const storage = new Map<string, string>();
+(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+  getItem: (key: string) => storage.get(key) ?? null,
+  setItem: (key: string, value: string) => { storage.set(key, value); },
+  removeItem: (key: string) => { storage.delete(key); },
+  clear: () => { storage.clear(); },
+  key: (index: number) => Array.from(storage.keys())[index] ?? null,
+  get length() { return storage.size; },
+};
+(globalThis as unknown as { window: { setTimeout: typeof setTimeout; clearTimeout: typeof clearTimeout } }).window = {
+  setTimeout,
+  clearTimeout,
+};
+
+const queue = OfflineQueueService.getInstance();
+queue.clearQueue();
+const queuedEvent = queue.enqueueEvent(
+  'EXIT_CONFIRMED',
+  'incident-network-1',
+  'kid-network-1',
+  { reason: 'network test' }
+);
+assert(queue.getPendingEvents().length === 1, 'An event must be queued before synchronization');
+const duplicate = queue.enqueueEvent(
+  'EXIT_CONFIRMED',
+  'incident-network-1',
+  'kid-network-1',
+  { reason: 'duplicate network test' }
+);
+assert(duplicate.id === queuedEvent.id, 'Duplicate pending events must be deduplicated');
+
+const originalSyncApiGetter = SyncApiService.getInstance;
+let sendMode: 'offline' | 'server-error' | 'online' = 'offline';
+const fakeSyncApi = {
+  async sendEvents(events: OfflineEvent[]): Promise<void> {
+    assert(events.length === 1, 'Each synchronization attempt should send one queued event');
+    if (sendMode === 'offline') throw new TypeError('Failed to fetch');
+    if (sendMode === 'server-error') throw new Error('Sync API returned HTTP 503');
+  },
+} as SyncApiService;
+(SyncApiService as unknown as { getInstance: () => SyncApiService }).getInstance = () => fakeSyncApi;
+
+const offlineResult = await queue.syncQueue();
+assert(offlineResult.syncedCount === 0 && offlineResult.failedCount === 1, 'Network loss must report a failed synchronization');
+const afterOffline = queue.getPendingEvents();
+assert(afterOffline.length === 1, 'Network loss must keep the event queued');
+assert(afterOffline[0].status === 'FAILED' && afterOffline[0].retryCount === 1, 'Network failure must mark the event FAILED and increment retry count');
+
+sendMode = 'server-error';
+const serverErrorResult = await queue.syncQueue();
+assert(serverErrorResult.syncedCount === 0 && serverErrorResult.failedCount === 1, 'HTTP server errors must report a failed synchronization');
+assert(queue.getPendingEvents()[0].retryCount === 2, 'Server errors must increment retry count without dropping the event');
+
+sendMode = 'online';
+const recoveryResult = await queue.syncQueue();
+assert(recoveryResult.syncedCount === 1 && recoveryResult.failedCount === 0, 'Synchronization must recover after connectivity returns');
+assert(queue.getPendingEvents().length === 0, 'Successfully synchronized events must leave the pending queue');
+assert(queue.getAllEvents().some((event) => event.id === queuedEvent.id && event.status === 'SENT'), 'Recovered event must be retained as SENT history');
+queue.clearQueue();
+(SyncApiService as unknown as { getInstance: typeof originalSyncApiGetter }).getInstance = originalSyncApiGetter;
 
 console.log('core unit tests passed');
