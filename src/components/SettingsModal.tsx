@@ -61,7 +61,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     alertPolicy.triggerEmergencyOnExit ?? true
   );
   const [instant1mExitEmergency, setInstant1mExitEmergency] = useState(
-    alertPolicy.instant1mExitEmergency ?? true
+    alertPolicy.instant1mExitEmergency ?? false
   );
   const [autoSmsLocationOnExit, setAutoSmsLocationOnExit] = useState(
     alertPolicy.autoSmsLocationOnExit ?? true

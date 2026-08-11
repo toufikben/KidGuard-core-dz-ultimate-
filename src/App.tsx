@@ -31,34 +31,23 @@ const LANG_KEY = 'kidguard_lang';
 function loadSafeZones(): SafeZone[] {
   try {
     const raw = localStorage.getItem(SAFE_ZONES_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    // Remove legacy demo zones so they can never be used for real tracking.
+    const zones = parsed.filter(
+      (zone): zone is SafeZone =>
+        zone && zone.id !== 'zone_school_1' && zone.id !== 'zone_home_2'
+    );
+    if (zones.length !== parsed.length) {
+      localStorage.setItem(SAFE_ZONES_KEY, JSON.stringify(zones));
     }
+    return zones;
   } catch {
-    // ignore
+    return [];
   }
-  // Default zones for Algiers (first run only)
-  return [
-    {
-      id: 'zone_school_1',
-      name: 'مدرسة التفوق / School',
-      latitude: 36.7538,
-      longitude: 3.0588,
-      radius: 300,
-      active: true,
-      createdAt: Date.now(),
-    },
-    {
-      id: 'zone_home_2',
-      name: 'المنزل / Home',
-      latitude: 36.76,
-      longitude: 3.065,
-      radius: 250,
-      active: true,
-      createdAt: Date.now(),
-    },
-  ];
 }
 
 function saveSafeZones(zones: SafeZone[]) {

@@ -40,6 +40,26 @@ assert(geofence.evaluate(outsideLocation, [zone], false).status === 'EXIT_CONFIR
 
 const risk = RiskEngine.getInstance();
 risk.resetEngine();
+const pendingAssessment = risk.assessRisk(
+  outsideLocation,
+  {
+    status: 'EXIT_PENDING',
+    violatedZones: [zone],
+    distanceToNearestZone: 500,
+    nearestZoneName: zone.name,
+    consecutiveOutsideCount: 1,
+    confidence: 100,
+    insideZoneNames: [],
+  },
+  80,
+  false,
+  false,
+  'en',
+  true
+);
+assert(pendingAssessment.state === 'MONITORING', 'Pending exit must remain MONITORING');
+assert(pendingAssessment.riskScore === 0, 'Pending exit must not escalate risk');
+
 const assessment = risk.assessRisk(
   { ...outsideLocation, speed: 20, isMockLocation: true },
   {

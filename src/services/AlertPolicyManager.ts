@@ -9,7 +9,8 @@ export class AlertPolicyManager {
   private config: AlertPolicyConfig = {
     firstExitAlertEnabled: true,
     triggerEmergencyOnExit: true,
-    instant1mExitEmergency: true,
+    // Safety default: require confirmed geofence exit before emergency escalation.
+    instant1mExitEmergency: false,
     autoSmsLocationOnExit: true,
     smsMode: 'CONFIRM',
     followUpIntervalMinutes: 5,
@@ -65,7 +66,14 @@ export class AlertPolicyManager {
     try {
       const saved = localStorage.getItem('kidguard_alert_policy');
       if (saved) {
-        this.config = { ...this.config, ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+        this.config = {
+          ...this.config,
+          ...parsed,
+          // Legacy sessions must not silently re-enable instant emergency mode.
+          instant1mExitEmergency: false,
+        };
+        this.saveConfig();
       }
     } catch (e) {
       console.warn('Failed to load alert policy', e);

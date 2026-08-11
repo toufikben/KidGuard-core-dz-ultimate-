@@ -70,7 +70,26 @@ export class RiskEngine {
       };
     }
 
-    // 2. Confirmed exit
+    // 2. Wait for geofence confirmation before any escalation.
+    // A first GPS reading can be inaccurate or arrive before the child is configured.
+    if (geofenceEval.status !== 'EXIT_CONFIRMED') {
+      return {
+        riskScore: 0,
+        riskLevel: 'LOW',
+        confidence: geofenceEval.confidence,
+        riskFactors: [
+          lang === 'ar'
+            ? `جارٍ التحقق من الخروج من ${geofenceEval.nearestZoneName || 'المنطقة الآمنة'}`
+            : lang === 'fr'
+            ? `Vérification de la sortie de ${geofenceEval.nearestZoneName || 'la zone sûre'}`
+            : `Verifying exit from ${geofenceEval.nearestZoneName || 'the safe zone'}`,
+        ],
+        state: 'MONITORING',
+        timestamp: Date.now(),
+      };
+    }
+
+    // 3. Confirmed exit
     if (!this.exitStartTime) {
       this.exitStartTime = Date.now();
     }
