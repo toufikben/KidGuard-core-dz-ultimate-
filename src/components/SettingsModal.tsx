@@ -14,10 +14,12 @@ import {
   Vibrate,
   Save,
   Activity,
+  Heart,
 } from 'lucide-react';
 import { AlertPolicyConfig, HealthStatus, DeviceRole } from '../types';
 import { Language, translations } from '../translations';
 import { hashPin } from '../services/SecurityUtils';
+import { privacyDataService } from '../services/PrivacyDataService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -86,6 +88,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   );
 
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [privacyStatus, setPrivacyStatus] = useState('');
+
+  const handleExportData = () => {
+    const payload = JSON.stringify(privacyDataService.exportData(), null, 2);
+    const blob = new Blob([payload], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `kidguard-data-export-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setPrivacyStatus(lang === 'ar' ? 'تم تجهيز ملف التصدير المنقّح وحفظه على جهازك.' : 'The redacted export was prepared and saved on this device.');
+  };
+
+  const handleDeleteLocalData = () => {
+    const confirmed = window.confirm(
+      lang === 'ar'
+        ? 'سيحذف هذا كل بيانات KidGuard المحلية، بما فيها الاقتران والمناطق والسجل. هل تريد المتابعة؟'
+        : 'This deletes all local KidGuard data, including pairing, zones, and history. Continue?'
+    );
+    if (!confirmed) return;
+    privacyDataService.deleteLocalData();
+    window.alert(lang === 'ar' ? 'تم حذف البيانات المحلية. سيُعاد تشغيل التطبيق.' : 'Local data deleted. The app will reload.');
+    window.location.reload();
+  };
 
   const handleSavePolicy = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,6 +143,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setNewPin('');
     setConfirmPin('');
     setSavedSuccess(true);
+    setPrivacyStatus(lang === 'ar' ? 'تم حفظ الإعدادات محليًا على هذا الجهاز.' : 'Settings saved locally on this device.');
     setTimeout(() => setSavedSuccess(false), 2500);
   };
 
@@ -496,9 +524,49 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
 
+
+          {/* SECTION 4: Privacy & data controls */}
+          <section className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 sm:p-5 space-y-3">
+            <h3 className="text-sm font-bold text-sky-400 border-b border-slate-700/60 pb-2.5">
+              {lang === 'ar' ? 'الخصوصية وإدارة البيانات' : 'Privacy & Data Controls'}
+            </h3>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              {lang === 'ar'
+                ? 'يعمل KidGuard محليًا عند عدم توفر الخادم. لا تصدّر هذه الأداة أسرار PIN أو رموز الاقتران. احذف البيانات عند فقدان الجهاز أو قبل تسليمه لشخص آخر.'
+                : 'KidGuard works locally when the server is unavailable. Exports exclude PIN and pairing secrets. Delete data before handing the device to someone else.'}
+            </p>
+            {privacyStatus && <p className="text-xs text-emerald-200 bg-emerald-950/40 border border-emerald-800/60 rounded-xl p-3">{privacyStatus}</p>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button type="button" onClick={handleExportData} className="py-2.5 rounded-xl bg-sky-600/20 border border-sky-500/40 text-sky-200 text-xs font-bold hover:bg-sky-600/30">
+                {lang === 'ar' ? 'تصدير بيانات منقّحة' : 'Export redacted data'}
+              </button>
+              <button type="button" onClick={handleDeleteLocalData} className="py-2.5 rounded-xl bg-red-600/20 border border-red-500/40 text-red-200 text-xs font-bold hover:bg-red-600/30">
+                {lang === 'ar' ? 'حذف كل البيانات المحلية' : 'Delete all local data'}
+              </button>
+            </div>
+          </section>
+
+          {/* SECTION 5: About & Dedication */}
+          <section className="relative overflow-hidden bg-gradient-to-br from-amber-950/40 via-slate-800/70 to-slate-900 border border-amber-500/30 rounded-2xl p-5 sm:p-6 text-center">
+            <div className="absolute -top-10 -left-10 w-28 h-28 rounded-full bg-amber-400/10 blur-2xl" />
+            <div className="relative space-y-3">
+              <div className="mx-auto w-10 h-10 rounded-full bg-amber-500/15 border border-amber-400/30 flex items-center justify-center">
+                <Heart className="w-5 h-5 text-amber-300" fill="currentColor" />
+              </div>
+              <h3 className="text-sm font-bold text-amber-300">{lang === 'ar' ? 'حول KidGuard' : 'About KidGuard'}</h3>
+              <div className="mx-auto max-w-lg border-y border-amber-400/20 py-4 space-y-2 text-sm leading-7 text-slate-200" dir="rtl">
+                <p>إلى أمي وإخوتي،</p>
+                <p>وإلى رفيقة دربي إيمان،</p>
+                <p>وإلى أصدقائي،</p>
+                <p>وإلى كل المسلمين الموحّدين على نهج السلف الصالح.</p>
+              </div>
+              <p className="text-xs text-amber-200/80 font-semibold">تطوير: بن جداه توفيق</p>
+            </div>
+          </section>
+
         </div>
 
-        {/* Modal Footer */}
+          {/* Modal Footer */}
         <div className="p-4 border-t border-slate-800 bg-slate-900 flex justify-end">
           <button
             onClick={onClose}

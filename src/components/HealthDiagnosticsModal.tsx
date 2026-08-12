@@ -9,7 +9,7 @@ import {
   AlertTriangle,
   Lock,
 } from 'lucide-react';
-import { HealthStatus } from '../types';
+import { HealthStatus, LastKnownLocation, ProtectionIncident } from '../types';
 import { Language, translations } from '../translations';
 
 interface HealthDiagnosticsModalProps {
@@ -17,6 +17,8 @@ interface HealthDiagnosticsModalProps {
   lang: Language;
   onSyncNow: () => void;
   pendingOfflineCount: number;
+  lastKnownLocation?: LastKnownLocation | null;
+  activeIncident?: ProtectionIncident | null;
 }
 
 export const HealthDiagnosticsModal: React.FC<HealthDiagnosticsModalProps> = ({
@@ -24,6 +26,8 @@ export const HealthDiagnosticsModal: React.FC<HealthDiagnosticsModalProps> = ({
   lang,
   onSyncNow,
   pendingOfflineCount,
+  lastKnownLocation = null,
+  activeIncident = null,
 }) => {
   const t = translations[lang];
 
@@ -44,6 +48,10 @@ export const HealthDiagnosticsModal: React.FC<HealthDiagnosticsModalProps> = ({
         <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full text-xs font-semibold">
           <ShieldCheck className="w-4 h-4" />
           <span>Protection: Active 24/7</span>
+        </div>
+        <div className="text-left sm:text-right text-[11px] text-slate-400">
+          <p>{activeIncident && activeIncident.status !== 'RESOLVED' ? 'حادثة قيد المتابعة محليًا' : 'لا توجد حادثة نشطة'}</p>
+          <p className="mt-1">{lastKnownLocation ? `آخر موقع قبل ${Math.max(0, Math.round((Date.now() - lastKnownLocation.capturedAt) / 60000))} دقيقة${lastKnownLocation.isStale ? ' · قديم' : ''}` : 'لا يوجد آخر موقع محفوظ'}</p>
         </div>
       </div>
 
@@ -119,6 +127,16 @@ export const HealthDiagnosticsModal: React.FC<HealthDiagnosticsModalProps> = ({
               </p>
             </div>
           </div>
+        </div>
+
+        {/* Trusted last-known location */}
+        <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-between col-span-1 sm:col-span-2">
+          <div>
+            <p className="text-xs text-slate-400">آخر موقع موثوق</p>
+            <p className="text-sm font-bold text-slate-200 mt-1">{lastKnownLocation ? `${lastKnownLocation.point.latitude.toFixed(5)}, ${lastKnownLocation.point.longitude.toFixed(5)}` : 'غير متوفر'}</p>
+            {lastKnownLocation && <p className="text-[10px] text-slate-500 mt-1">المصدر: {lastKnownLocation.source} · الدقة ±{Math.round(lastKnownLocation.point.accuracy)}م</p>}
+          </div>
+          <span className={`px-2 py-1 rounded-lg text-[10px] font-bold ${lastKnownLocation && !lastKnownLocation.isStale ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>{lastKnownLocation && !lastKnownLocation.isStale ? 'موثوق حديث' : 'يتطلب تحقق'}</span>
         </div>
 
         {/* Sync & Offline Queue */}

@@ -1,4 +1,5 @@
 import { OfflineEvent } from '../types';
+import { PairingService } from './PairingService';
 
 const DEFAULT_EVENTS_PATH = '/api/events/batch';
 
@@ -19,12 +20,19 @@ export class SyncApiService {
   }
 
   public async sendEvents(events: OfflineEvent[]): Promise<void> {
+    const pairing = PairingService.getInstance();
+    if (!pairing.isSessionValid()) throw new Error('Pairing session is not active or has expired');
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 10000);
     try {
       const response = await fetch(`${this.getBaseUrl()}${DEFAULT_EVENTS_PATH}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${pairing.getPairingInfo().deviceToken}`,
+          'X-KidGuard-Device': pairing.getPairingInfo().kidId,
+          'Idempotency-Key': events.map((event) => event.idempotencyKey ?? event.id).join(','),
+        },
         body: JSON.stringify({ events }),
         signal: controller.signal,
       });

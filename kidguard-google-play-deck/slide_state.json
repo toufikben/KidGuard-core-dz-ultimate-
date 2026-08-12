@@ -1,0 +1,111 @@
+{
+  "project_info": {
+    "title": "KidGuard",
+    "created": 1786391342.029,
+    "last_updated": 1786391522.653,
+    "total_slides": 9
+  },
+  "slides": [
+    {
+      "id": "cover",
+      "state": "edited",
+      "pageNum": 1
+    },
+    {
+      "id": "family-calm",
+      "state": "edited",
+      "pageNum": 2
+    },
+    {
+      "id": "dashboard",
+      "state": "edited",
+      "pageNum": 3
+    },
+    {
+      "id": "safe-zones",
+      "state": "edited",
+      "pageNum": 4
+    },
+    {
+      "id": "alerts",
+      "state": "edited",
+      "pageNum": 5
+    },
+    {
+      "id": "parent-controls",
+      "state": "edited",
+      "pageNum": 6
+    },
+    {
+      "id": "offline",
+      "state": "edited",
+      "pageNum": 7
+    },
+    {
+      "id": "family-helper",
+      "state": "edited",
+      "pageNum": 8
+    },
+    {
+      "id": "closing",
+      "state": "edited",
+      "pageNum": 9
+    }
+  ],
+  "outline": [
+    {
+      "id": "cover",
+      "title": "KidGuard",
+      "summary": "حماية أذكى. اطمئنان أكبر للعائلة.",
+      "image_plan": "Use a suitable image if needed"
+    },
+    {
+      "id": "family-calm",
+      "title": "العائلة لا تحتاج مزيدًا من القلق",
+      "summary": "KidGuard يجمع أدوات المتابعة والتنبيه والحماية في تجربة واحدة واضحة.",
+      "image_plan": "Use a suitable image if needed"
+    },
+    {
+      "id": "dashboard",
+      "title": "كل ما يهمك في شاشة واحدة",
+      "summary": "لوحة متابعة عائلية تساعد الوالد على اتخاذ القرار بسرعة وهدوء.",
+      "image_plan": "Use a suitable image if needed"
+    },
+    {
+      "id": "safe-zones",
+      "title": "المناطق الآمنة تمنحك وضوحًا يوميًا",
+      "summary": "حدد الأماكن المهمة وتابع الدخول والخروج من النطاقات الجغرافية.",
+      "image_plan": "Use a suitable image if needed"
+    },
+    {
+      "id": "alerts",
+      "title": "تنبيهات واضحة عند اللحظة المهمة",
+      "summary": "أبرز الأحداث التي تستحق الانتباه دون إغراق المستخدم بالتنبيهات.",
+      "image_plan": "Use a suitable image if needed"
+    },
+    {
+      "id": "parent-controls",
+      "title": "حماية الوالد تبدأ من الإعدادات",
+      "summary": "أدوات تحكم محمية مع اقتران آمن بين جهاز الوالد وجهاز الطفل.",
+      "image_plan": "Use a suitable image if needed"
+    },
+    {
+      "id": "offline",
+      "title": "مصمم للواقع، حتى عند ضعف الاتصال",
+      "summary": "طابور Offline ومزامنة REST فعلية عند عودة الشبكة.",
+      "image_plan": "Use a suitable image if needed"
+    },
+    {
+      "id": "family-helper",
+      "title": "KidGuard مساعد للعائلة، وليس بديلًا عنها",
+      "summary": "تقنية أوضح مع احترام الخصوصية والتواصل والثقة.",
+      "image_plan": "Use a suitable image if needed"
+    },
+    {
+      "id": "closing",
+      "title": "ابقَ قريبًا. ابقَ مطمئنًا.",
+      "summary": "KidGuard — نزّل التطبيق وابدأ إعداد أول منطقة آمنة لعائلتك.",
+      "image_plan": "Use a suitable image if needed"
+    }
+  ]
+}

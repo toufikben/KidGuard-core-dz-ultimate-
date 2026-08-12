@@ -17,6 +17,7 @@ import {
   LocationPoint,
   SafeZone,
   RiskAssessment,
+  CheckInRequest,
 } from '../types';
 import { Language, translations } from '../translations';
 
@@ -31,6 +32,8 @@ interface ChildViewProps {
   onSendManualSms: () => void;
   onTriggerSiren: () => void;
   isSirenActive: boolean;
+  checkIn?: CheckInRequest | null;
+  onRespondCheckIn?: () => void;
 }
 
 export const ChildView: React.FC<ChildViewProps> = ({
@@ -44,6 +47,8 @@ export const ChildView: React.FC<ChildViewProps> = ({
   onSendManualSms,
   onTriggerSiren,
   isSirenActive,
+  checkIn = null,
+  onRespondCheckIn,
 }) => {
   const t = translations[lang];
 
@@ -129,7 +134,19 @@ export const ChildView: React.FC<ChildViewProps> = ({
         </div>
       </div>
 
-      {/* 2. One-Tap Giant SOS Button */}
+      {/* 2. Check-in acknowledgement */}
+      {checkIn?.status === 'PENDING' && (
+        <div className="bg-blue-950/60 border border-blue-500/40 rounded-3xl p-5 text-center space-y-3 shadow-xl">
+          <div className="flex items-center justify-center gap-2 text-blue-200 font-black">
+            <CheckCircle2 className="w-5 h-5" />
+            <span>يريد الوالد التأكد من سلامتك</span>
+          </div>
+          <p className="text-xs text-blue-100/80">اضغط على الزر لتأكيد أنك بخير. لا يُرسل هذا التأكيد موقعًا جديدًا بمفرده.</p>
+          <button onClick={onRespondCheckIn} className="px-6 py-3 rounded-xl bg-blue-500 hover:bg-blue-400 text-white font-black text-sm active:scale-95 transition-all">أنا بخير — تأكيد</button>
+        </div>
+      )}
+
+      {/* 3. One-Tap Giant SOS Button */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 text-center space-y-4 shadow-xl">
         <h3 className="text-base font-bold text-slate-200">زر الاستغاثة المباشر (SOS)</h3>
         <p className="text-xs text-slate-400 max-w-md mx-auto">
@@ -171,7 +188,7 @@ export const ChildView: React.FC<ChildViewProps> = ({
         </p>
       </div>
 
-      {/* 3. Siren Toggle */}
+      {/* 4. Siren Toggle */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-xl bg-red-500/20 text-red-400">
@@ -194,7 +211,7 @@ export const ChildView: React.FC<ChildViewProps> = ({
         </button>
       </div>
 
-      {/* 4. Device Diagnostics Bar */}
+      {/* 5. Device Diagnostics Bar */}
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center gap-3">
           <BatteryCharging className="w-5 h-5 text-amber-400" />

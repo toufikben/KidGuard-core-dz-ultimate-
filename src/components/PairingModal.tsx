@@ -7,6 +7,7 @@ interface PairingModalProps {
   pairingInfo: DevicePairing;
   onGenerateNewCode: () => void;
   onPairWithCode: (code: string) => boolean;
+  onRevokeDevice?: () => void;
   lang: Language;
 }
 
@@ -14,6 +15,7 @@ export const PairingModal: React.FC<PairingModalProps> = ({
   pairingInfo,
   onGenerateNewCode,
   onPairWithCode,
+  onRevokeDevice,
   lang,
 }) => {
   const t = translations[lang];
@@ -82,6 +84,12 @@ export const PairingModal: React.FC<PairingModalProps> = ({
           <div className="text-3xl font-extrabold tracking-widest font-mono text-emerald-400 bg-slate-900 py-3 rounded-xl border border-slate-700">
             {pairingInfo.pairingCode}
           </div>
+          <p className="text-[11px] text-slate-400">
+            {pairingInfo.pairingCodeExpiresAt > Date.now()
+              ? `صالح حتى ${new Date(pairingInfo.pairingCodeExpiresAt).toLocaleTimeString()}`
+              : 'رمز الاقتران منتهي؛ ولّد رمزًا جديدًا'}
+          </p>
+          <p className="text-[11px] text-slate-500">المحاولات الفاشلة: {pairingInfo.pairingAttempts}</p>
           <button
             type="button"
             onClick={onGenerateNewCode}
@@ -90,6 +98,15 @@ export const PairingModal: React.FC<PairingModalProps> = ({
             <RefreshCw className="w-3.5 h-3.5" />
             توليد رمز جديد
           </button>
+          {pairingInfo.isPaired && onRevokeDevice && (
+            <button
+              type="button"
+              onClick={onRevokeDevice}
+              className="text-xs text-red-300 hover:text-red-200"
+            >
+              إبطال هذا الجهاز
+            </button>
+          )}
         </div>
 
         {/* Enter Code Form */}

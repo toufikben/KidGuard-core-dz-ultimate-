@@ -6,7 +6,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
-import { DeviceRole, LocationPoint, SafeZone, LoggedAlert } from './types';
+import {
+  DeviceRole,
+  LocationPoint,
+  SafeZone,
+  LoggedAlert,
+  ProtectionIncident,
+  LastKnownLocation,
+  CheckInRequest,
+} from './types';
 import { Language } from './translations';
 import { Navbar } from './components/Navbar';
 import { ParentDashboard } from './components/ParentDashboard';
@@ -23,6 +31,7 @@ import { OfflineQueueService } from './services/OfflineQueueService';
 import { BackgroundLocationService } from './services/BackgroundLocationService';
 import { SmsService } from './services/SmsService';
 import { verifyPin } from './services/SecurityUtils';
+import { ProtectionStateService } from './services/ProtectionStateService';
 
 const SAFE_ZONES_KEY = 'kidguard_safe_zones';
 const ROLE_KEY = 'kidguard_role';
@@ -103,6 +112,16 @@ export default function App() {
   const [geoError, setGeoError] = useState<string | null>(null);
   const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
   const [isBgTracking, setIsBgTracking] = useState(false);
+  const protectionState = ProtectionStateService.getInstance();
+  const [lastKnownLocation, setLastKnownLocation] = useState<LastKnownLocation | null>(() =>
+    protectionState.getLastKnownLocation()
+  );
+  const [activeIncident, setActiveIncident] = useState<ProtectionIncident | null>(() =>
+    protectionState.getIncident()
+  );
+  const [checkIn, setCheckIn] = useState<CheckInRequest | null>(() =>
+    protectionState.getIncident()?.checkIn ?? null
+  );
 
   // PIN gate for settings
   const [pinUnlocked, setPinUnlocked] = useState(false);
@@ -175,6 +194,23 @@ export default function App() {
         setAlertHistory((prev) => [loggedAlert, ...prev]);
       }
 
+      const shouldOpenIncident =
+        assessment.state === 'OUTSIDE_ZONE' ||
+        assessment.state === 'DANGER' ||
+        assessment.state === 'EMERGENCY';
+      if (shouldOpenIncident) {
+        const incident = protectionState.startIncident(
+          pairingInfo.kidId || 'child-local',
+          assessment.riskFactors[0] || assessment.state,
+          protectionState.recordLocation(currentLoc, 'LIVE_GPS')
+        );
+        setActiveIncident(incident);
+        setLastKnownLocation(protectionState.getLastKnownLocation());
+      } else if (assessment.state === 'SAFE' || assessment.state === 'RETURNED_TO_SAFE_ZONE') {
+        protectionState.resolveIncident();
+        setActiveIncident(protectionState.getIncident());
+      }
+
       if (
         currentPolicy.triggerEmergencyOnExit &&
         (assessment.state === 'OUTSIDE_ZONE' ||
@@ -208,6 +244,7 @@ export default function App() {
 
       setHealthStatus(healthMonitor.getHealthDiagnostics(currentLoc));
       setRiskAssessment(assessment);
+      setLastKnownLocation(protectionState.getLastKnownLocation());
       return assessment;
     },
     [
@@ -215,6 +252,7 @@ export default function App() {
       healthStatus.tamperDetected,
       lang,
       pairingInfo.kidId,
+      protectionState,
       refreshOfflineCount,
     ]
   );
@@ -239,6 +277,8 @@ export default function App() {
     const handleLocation = (realLoc: LocationPoint) => {
       setGeoError(null);
       if (!isSimulatingOutside) {
+        protectionState.recordLocation(realLoc, Capacitor.isNativePlatform() ? 'BACKGROUND_GPS' : 'LIVE_GPS');
+        setLastKnownLocation(protectionState.getLastKnownLocation());
         setLocation(realLoc);
         setLocationHistory((hist) => [...hist.slice(-30), realLoc]);
         runEvaluation(realLoc, safeZones);
@@ -432,6 +472,18 @@ export default function App() {
     refreshOfflineCount();
   };
 
+  const handleRequestCheckIn = () => {
+    const request = protectionState.requestCheckIn(pairingInfo.kidId || 'child-local');
+    setCheckIn(request);
+    setActiveIncident(protectionState.getIncident());
+  };
+
+  const handleRespondCheckIn = () => {
+    const response = protectionState.respondToCheckIn('CONFIRMED');
+    setCheckIn(response);
+    setActiveIncident(protectionState.getIncident());
+  };
+
   const handleGenerateNewPairingCode = () => {
     pairingService.generateNewPairingCode();
     setPairingInfo(pairingService.getPairingInfo());
@@ -441,6 +493,11 @@ export default function App() {
     const success = pairingService.pairWithCode(code);
     setPairingInfo(pairingService.getPairingInfo());
     return success;
+  };
+
+  const handleRevokeDevice = () => {
+    pairingService.revokeDevice();
+    setPairingInfo(pairingService.getPairingInfo());
   };
 
   const handleTriggerSos = () => {
@@ -607,11 +664,16 @@ export default function App() {
             onPingLocation={() => runEvaluation(location, safeZones)}
             onGenerateNewPairingCode={handleGenerateNewPairingCode}
             onPairWithCode={handlePairWithCode}
+            onRevokeDevice={handleRevokeDevice}
             onChildLocationChange={handleChildLocationChange}
             onOpenSettings={handleOpenSettings}
             activeTab={parentActiveTab}
             onTabChange={setParentActiveTab}
             pendingOfflineCount={pendingOfflineCount}
+            activeIncident={activeIncident}
+            lastKnownLocation={lastKnownLocation}
+            checkIn={checkIn}
+            onRequestCheckIn={handleRequestCheckIn}
           />
         ) : (
           <ChildView
@@ -625,6 +687,8 @@ export default function App() {
             onSendManualSms={handleSendManualSms}
             onTriggerSiren={handleToggleSiren}
             isSirenActive={isSirenActive}
+            checkIn={checkIn}
+            onRespondCheckIn={handleRespondCheckIn}
           />
         )}
       </main>

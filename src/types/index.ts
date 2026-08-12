@@ -73,6 +73,7 @@ export interface OfflineEvent {
   timestamp: number;
   status: 'PENDING' | 'SENDING' | 'SENT' | 'FAILED';
   retryCount: number;
+  idempotencyKey?: string;
 }
 
 export interface HealthStatus {
@@ -97,9 +98,13 @@ export interface DevicePairing {
   childName: string;
   deviceToken: string;
   pairingCode: string;
+  pairingCodeExpiresAt: number;
+  pairingAttempts: number;
   pairedAt: number;
   parentAccountId: string;
   isPaired: boolean;
+  revokedAt: number | null;
+  sessionExpiresAt: number | null;
 }
 
 export interface EmergencyAudioState {
@@ -120,4 +125,34 @@ export interface LoggedAlert {
   timestamp: number;
   smsSent: boolean;
   mapsLink: string;
+}
+
+export type IncidentStatus = 'NONE' | 'MONITORING' | 'ESCALATED' | 'RESOLVED';
+export type CheckInStatus = 'PENDING' | 'CONFIRMED' | 'EXPIRED' | 'CANCELLED';
+
+export interface LastKnownLocation {
+  point: LocationPoint;
+  source: 'LIVE_GPS' | 'BACKGROUND_GPS' | 'MANUAL_PING' | 'SIMULATION';
+  capturedAt: number;
+  isStale: boolean;
+}
+
+export interface CheckInRequest {
+  id: string;
+  childId: string;
+  requestedAt: number;
+  expiresAt: number;
+  respondedAt: number | null;
+  status: CheckInStatus;
+}
+
+export interface ProtectionIncident {
+  id: string;
+  childId: string;
+  status: IncidentStatus;
+  startedAt: number;
+  updatedAt: number;
+  reason: string;
+  lastKnownLocation: LastKnownLocation | null;
+  checkIn: CheckInRequest | null;
 }

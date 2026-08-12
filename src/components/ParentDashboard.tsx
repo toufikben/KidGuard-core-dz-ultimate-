@@ -26,6 +26,9 @@ import {
   LoggedAlert,
   RiskAssessment,
   SafeZone,
+  ProtectionIncident,
+  LastKnownLocation,
+  CheckInRequest,
 } from '../types';
 import { Language, translations } from '../translations';
 import { MapView } from './MapView';
@@ -33,6 +36,7 @@ import { SafeZoneForm } from './SafeZoneForm';
 import { AlertPolicySettings } from './AlertPolicySettings';
 import { HealthDiagnosticsModal } from './HealthDiagnosticsModal';
 import { PairingModal } from './PairingModal';
+import { ResponseCenter } from './ResponseCenter';
 
 interface ParentDashboardProps {
   location: LocationPoint;
@@ -55,11 +59,16 @@ interface ParentDashboardProps {
   onPingLocation: () => void;
   onGenerateNewPairingCode: () => void;
   onPairWithCode: (code: string) => boolean;
+  onRevokeDevice?: () => void;
   onChildLocationChange?: (lat: number, lng: number) => void;
   onOpenSettings?: () => void;
   activeTab?: 'map' | 'zones' | 'alerts' | 'health' | 'settings' | 'pairing';
   onTabChange?: (tab: 'map' | 'zones' | 'alerts' | 'health' | 'settings' | 'pairing') => void;
   pendingOfflineCount?: number;
+  activeIncident?: ProtectionIncident | null;
+  lastKnownLocation?: LastKnownLocation | null;
+  checkIn?: CheckInRequest | null;
+  onRequestCheckIn?: () => void;
 }
 
 export const ParentDashboard: React.FC<ParentDashboardProps> = ({
@@ -83,11 +92,16 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
   onPingLocation,
   onGenerateNewPairingCode,
   onPairWithCode,
+  onRevokeDevice,
   onChildLocationChange,
   onOpenSettings,
   activeTab: externalActiveTab,
   onTabChange,
   pendingOfflineCount = 0,
+  activeIncident = null,
+  lastKnownLocation = null,
+  checkIn = null,
+  onRequestCheckIn,
 }) => {
   const t = translations[lang];
 
@@ -149,7 +163,45 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
         </div>
       )}
 
-      {/* 1. Kid Status Overview Card */}
+      {/* 1. Incident and trusted-location panel */}
+      {(activeIncident && activeIncident.status !== 'RESOLVED') || checkIn ? (
+        <div className="bg-red-950/60 border border-red-500/40 rounded-3xl p-5 text-white space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.18em] text-red-300 font-bold">Incident Mode</p>
+              <h2 className="text-xl font-black text-red-100">وضع متابعة حادثة الحماية</h2>
+              <p className="text-xs text-red-200/80 mt-1">الحالة لا تعني تأكيد اختطاف. راجع الموقع واتصل بالطفل أو الجهات المختصة عند الحاجة.</p>
+            </div>
+            <span className="px-3 py-1.5 rounded-full bg-red-500/20 border border-red-400/40 text-red-200 text-xs font-bold">
+              {activeIncident?.status === 'ESCALATED' ? 'تصعيد محلي' : 'مراقبة نشطة'}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+            <div className="bg-slate-950/50 rounded-2xl p-3 border border-red-900/60">
+              <p className="text-slate-400">سبب الفتح</p>
+              <p className="font-bold text-red-100 mt-1">{activeIncident?.reason || 'طلب تحقق'}</p>
+            </div>
+            <div className="bg-slate-950/50 rounded-2xl p-3 border border-red-900/60">
+              <p className="text-slate-400">آخر موقع موثوق</p>
+              <p className="font-bold text-red-100 mt-1">{lastKnownLocation ? `${lastKnownLocation.point.latitude.toFixed(5)}, ${lastKnownLocation.point.longitude.toFixed(5)}` : 'غير متوفر'}</p>
+              <p className="text-[10px] text-slate-500 mt-1">{lastKnownLocation ? `دقة ±${Math.round(lastKnownLocation.point.accuracy)}م · ${lastKnownLocation.isStale ? 'قديم' : 'حديث'}` : 'انتظر أول إشارة GPS'}</p>
+            </div>
+            <div className="bg-slate-950/50 rounded-2xl p-3 border border-red-900/60">
+              <p className="text-slate-400">Check-in</p>
+              <p className="font-bold text-red-100 mt-1">{checkIn?.status === 'PENDING' ? 'بانتظار تأكيد الطفل' : checkIn?.status === 'CONFIRMED' ? 'تم التأكيد' : 'غير مطلوب'}</p>
+              <button onClick={onRequestCheckIn} className="mt-2 px-3 py-1.5 rounded-lg bg-red-500/20 text-red-100 border border-red-400/40 font-bold hover:bg-red-500/30">طلب تحقق الآن</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <ResponseCenter
+        lastKnownLocation={lastKnownLocation}
+        activeIncident={activeIncident}
+        childName={alertPolicy.childName}
+      />
+
+      {/* 2. Kid Status Overview Card */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 text-white shadow-xl space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
           {/* Child Identity & State */}
@@ -275,7 +327,7 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
         </div>
       </div>
 
-      {/* 2. Navigation Tabs */}
+      {/* 3. Navigation Tabs */}
       <div className="bg-slate-900 border border-slate-800 p-1.5 rounded-2xl flex items-center gap-2 overflow-x-auto">
         <button
           onClick={() => setActiveTab('map')}
@@ -343,7 +395,7 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
         </button>
       </div>
 
-      {/* 3. Tab Content View */}
+      {/* 4. Tab Content View */}
       {activeTab === 'map' && (
         <div className="h-[clamp(390px,58svh,520px)] sm:h-[520px] rounded-3xl overflow-hidden shadow-2xl">
           <MapView
@@ -488,6 +540,8 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
           lang={lang}
           onSyncNow={onSyncNow}
           pendingOfflineCount={pendingOfflineCount}
+          lastKnownLocation={lastKnownLocation}
+          activeIncident={activeIncident}
         />
       )}
 
@@ -496,6 +550,7 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
           pairingInfo={pairingInfo}
           onGenerateNewCode={onGenerateNewPairingCode}
           onPairWithCode={onPairWithCode}
+          onRevokeDevice={onRevokeDevice}
           lang={lang}
         />
       )}

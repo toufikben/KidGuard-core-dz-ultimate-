@@ -48,7 +48,10 @@ export class OfflineQueueService {
   ): OfflineEvent {
     // Deduplication check: Don't enqueue identical event type for same incident if already pending
     const existing = this.queue.find(
-      (e) => e.incidentId === incidentId && e.eventType === eventType && e.status === 'PENDING'
+      (e) =>
+        e.incidentId === incidentId &&
+        e.eventType === eventType &&
+        (e.status === 'PENDING' || e.status === 'FAILED' || e.status === 'SENDING')
     );
     if (existing) {
       return existing;
@@ -64,6 +67,7 @@ export class OfflineQueueService {
       timestamp: Date.now(),
       status: 'PENDING',
       retryCount: 0,
+      idempotencyKey: `kidguard:${incidentId}:${eventType}`,
     };
 
     this.queue.push(event);

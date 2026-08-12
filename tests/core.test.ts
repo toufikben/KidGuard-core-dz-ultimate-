@@ -6,6 +6,9 @@ import { SecurityChecker } from '../src/services/SecurityChecker';
 import { OfflineQueueService } from '../src/services/OfflineQueueService';
 import { SyncApiService } from '../src/services/SyncApiService';
 import { OfflineEvent } from '../src/types';
+import { ProtectionStateService } from '../src/services/ProtectionStateService';
+import { PairingService } from '../src/services/PairingService';
+import { privacyDataService } from '../src/services/PrivacyDataService';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -158,6 +161,7 @@ const duplicate = queue.enqueueEvent(
   { reason: 'duplicate network test' }
 );
 assert(duplicate.id === queuedEvent.id, 'Duplicate pending events must be deduplicated');
+assert(queuedEvent.idempotencyKey === 'kidguard:incident-network-1:EXIT_CONFIRMED', 'Events must receive a deterministic idempotency key');
 
 const originalSyncApiGetter = SyncApiService.getInstance;
 let sendMode: 'offline' | 'server-error' | 'online' = 'offline';
@@ -176,8 +180,16 @@ const afterOffline = queue.getPendingEvents();
 assert(afterOffline.length === 1, 'Network loss must keep the event queued');
 assert(afterOffline[0].status === 'FAILED' && afterOffline[0].retryCount === 1, 'Network failure must mark the event FAILED and increment retry count');
 
-sendMode = 'server-error';
-const serverErrorResult = await queue.syncQueue();
+  const failedDuplicate = queue.enqueueEvent(
+    'EXIT_CONFIRMED',
+    'incident-network-1',
+    'kid-network-1',
+    { reason: 'duplicate after offline failure' }
+  );
+  assert(failedDuplicate.id === queuedEvent.id, 'Failed events must remain deduplicated during retry');
+
+  sendMode = 'server-error';
+  const serverErrorResult = await queue.syncQueue();
 assert(serverErrorResult.syncedCount === 0 && serverErrorResult.failedCount === 1, 'HTTP server errors must report a failed synchronization');
 assert(queue.getPendingEvents()[0].retryCount === 2, 'Server errors must increment retry count without dropping the event');
 
@@ -186,7 +198,59 @@ const recoveryResult = await queue.syncQueue();
 assert(recoveryResult.syncedCount === 1 && recoveryResult.failedCount === 0, 'Synchronization must recover after connectivity returns');
 assert(queue.getPendingEvents().length === 0, 'Successfully synchronized events must leave the pending queue');
 assert(queue.getAllEvents().some((event) => event.id === queuedEvent.id && event.status === 'SENT'), 'Recovered event must be retained as SENT history');
-queue.clearQueue();
-(SyncApiService as unknown as { getInstance: typeof originalSyncApiGetter }).getInstance = originalSyncApiGetter;
+  queue.clearQueue();
+  (SyncApiService as unknown as { getInstance: typeof originalSyncApiGetter }).getInstance = originalSyncApiGetter;
+
+  // Protection state must survive reloads and distinguish trusted fresh data from stale data.
+  const protection = ProtectionStateService.getInstance();
+  protection.reset();
+  const protectionPoint: LocationPoint = { ...insideLocation, timestamp: Date.now() };
+  const snapshot = protection.recordLocation(protectionPoint, 'LIVE_GPS');
+  assert(snapshot.source === 'LIVE_GPS', 'Live fixes must be marked as trusted live GPS snapshots');
+  assert(protection.getLastKnownLocation(snapshot.capturedAt)?.isStale === false, 'A fresh last-known location must not be stale');
+  const incident = protection.startIncident('kid-state-1', 'confirmed exit', snapshot);
+  const sameIncident = protection.startIncident('kid-state-1', 'repeated exit', snapshot);
+  assert(incident.id === sameIncident.id, 'Repeated signals must update one incident instead of creating duplicates');
+  assert(sameIncident.status === 'MONITORING', 'A newly opened incident must start in MONITORING state');
+  const request = protection.requestCheckIn('kid-state-1');
+  assert(request.status === 'PENDING', 'A new check-in must wait for the child response');
+  const response = protection.respondToCheckIn('CONFIRMED');
+  assert(response?.status === 'CONFIRMED', 'The child response must close a pending check-in');
+  assert(protection.getIncident()?.checkIn?.status === 'CONFIRMED', 'Incident state must include the confirmed check-in');
+  const stale = protection.getLastKnownLocation(snapshot.capturedAt + ProtectionStateService.getStaleAfterMs() + 1);
+  assert(stale?.isStale === true, 'A location older than the freshness window must be marked stale');
+  protection.resolveIncident();
+  assert(protection.getIncident()?.status === 'RESOLVED', 'A resolved incident must remain auditable locally');
+  protection.reset();
+
+  // Pairing security: short-lived code, attempt limit, session expiry and explicit revocation.
+  storage.clear();
+  (PairingService as unknown as { instance?: PairingService }).instance = undefined;
+  const pairing = PairingService.getInstance();
+  const pairingInfo = pairing.getPairingInfo();
+  assert(pairingInfo.pairingCodeExpiresAt > Date.now(), 'A new pairing code must expire in the future');
+  for (let attempt = 0; attempt < PairingService.getMaxPairingAttempts(); attempt++) {
+    assert(!pairing.pairWithCode('000000'), 'Incorrect pairing codes must be rejected');
+  }
+  assert(!pairing.pairWithCode(pairingInfo.pairingCode), 'Pairing must lock after the maximum failed attempts');
+  const refreshedCode = pairing.generateNewPairingCode();
+  assert(pairing.pairWithCode(refreshedCode), 'A freshly generated valid code must pair successfully');
+  assert(pairing.isSessionValid(), 'A newly paired device must have a valid session');
+  pairing.revokeDevice();
+  assert(!pairing.isSessionValid(), 'Revoked devices must not have a valid session');
+  assert(!pairing.pairWithCode(refreshedCode), 'A revoked session must not be silently reused');
+
+  // Privacy export/delete: export is useful but must not contain secrets.
+  localStorage.setItem('kidguard_alert_policy', JSON.stringify({ childName: 'Test', parentPinHash: 'secret-hash', smsEnabled: true }));
+  localStorage.setItem('kidguard_device_pairing', JSON.stringify({ kidId: 'kid-test', deviceToken: 'secret-token', parentAccountId: 'secret-parent', pairingCode: '123456', isPaired: false }));
+  localStorage.setItem('kidguard_alert_history', JSON.stringify([{ id: 'alert-1' }]));
+  const privacyExport = privacyDataService.exportData();
+  const exportedPolicy = privacyExport.data.kidguard_alert_policy as Record<string, unknown>;
+  const exportedPairing = privacyExport.data.kidguard_device_pairing as Record<string, unknown>;
+  assert(exportedPolicy.parentPinHash === undefined, 'Privacy export must redact the parent PIN hash');
+  assert(exportedPairing.deviceToken === undefined && exportedPairing.pairingCode === undefined, 'Privacy export must redact pairing secrets');
+  assert(privacyExport.data.kidguard_alert_history !== undefined, 'Privacy export must include non-secret local history');
+  privacyDataService.deleteLocalData();
+  assert(privacyDataService.getManagedStorageKeys().every((key) => localStorage.getItem(key) === null), 'Delete local data must remove every managed key');
 
 console.log('core unit tests passed');
