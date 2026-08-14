@@ -6,7 +6,7 @@ const STORAGE_KEYS = [
   'kidguard_protection_state',
   'kidguard_device_pairing',
   'kidguard_role',
-  'kidguard_language',
+  'kidguard_lang',
   'kidguard_theme',
 ] as const;
 

@@ -164,7 +164,7 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
       )}
 
       {/* 1. Incident and trusted-location panel */}
-      {(activeIncident && activeIncident.status !== 'RESOLVED') || checkIn ? (
+      {(activeIncident && activeIncident.status !== 'RESOLVED') || checkIn?.status === 'PENDING' ? (
         <div className="bg-red-950/60 border border-red-500/40 rounded-3xl p-5 text-white space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>

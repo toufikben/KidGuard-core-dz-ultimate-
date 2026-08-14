@@ -9,6 +9,7 @@ import { OfflineEvent } from '../src/types';
 import { ProtectionStateService } from '../src/services/ProtectionStateService';
 import { PairingService } from '../src/services/PairingService';
 import { privacyDataService } from '../src/services/PrivacyDataService';
+import { GpsFreshnessService } from '../src/services/GpsFreshnessService';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -38,6 +39,18 @@ const insideLocation: LocationPoint = {
   ...outsideLocation,
   latitude: 0,
 };
+
+// GPS freshness must reject stale, replayed, and implausibly future fixes.
+const freshness = GpsFreshnessService.getInstance();
+freshness.reset();
+const referenceNow = 1_700_000_000_000;
+const freshFix = { ...insideLocation, timestamp: referenceNow - 30_000 };
+assert(freshness.accept(freshFix, referenceNow).accepted, 'A recent GPS fix must be accepted');
+assert(freshness.accept({ ...freshFix, timestamp: referenceNow - 30_000 }, referenceNow).accepted, 'An equal-timestamp fix must remain idempotently acceptable');
+assert(freshness.accept({ ...freshFix, timestamp: referenceNow - 31_000 }, referenceNow).accepted === false, 'An older out-of-order fix must be rejected');
+assert(freshness.accept({ ...freshFix, timestamp: referenceNow - 90_001 }, referenceNow).accepted === false, 'A fix older than the freshness window must be rejected');
+assert(freshness.accept({ ...freshFix, timestamp: referenceNow + 5_001 }, referenceNow).accepted === false, 'An implausibly future fix must be rejected');
+freshness.reset();
 
 const geofence = GeofenceMonitor.getInstance();
 geofence.resetState();

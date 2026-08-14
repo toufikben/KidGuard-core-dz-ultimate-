@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { LocationPoint } from '../types';
+import { randomHex } from './SecurityUtils';
 
 interface DirectSmsPlugin {
   send(options: { phoneNumber: string; message: string }): Promise<{ sent: boolean }>;
@@ -125,7 +126,7 @@ export class SmsService {
     location: LocationPoint,
     mode: SmsSendMode = 'CONFIRM'
   ): Promise<SmsDispatchResult> {
-    const messageId = `sms_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const messageId = `sms_${Date.now()}_${randomHex(8)}`;
     const body = this.createAlertSmsBody(childName, reason, location);
     const cleanPhone = this.normalizePhone(phoneNumber);
 

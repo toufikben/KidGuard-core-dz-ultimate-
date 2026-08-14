@@ -26,6 +26,7 @@ import { RiskEngine } from './services/RiskEngine';
 import { AlertPolicyManager } from './services/AlertPolicyManager';
 import { HealthMonitorService } from './services/HealthMonitorService';
 import { AudioService } from './services/AudioService';
+import { GpsFreshnessService } from './services/GpsFreshnessService';
 import { PairingService } from './services/PairingService';
 import { OfflineQueueService } from './services/OfflineQueueService';
 import { BackgroundLocationService } from './services/BackgroundLocationService';
@@ -113,6 +114,7 @@ export default function App() {
   const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
   const [isBgTracking, setIsBgTracking] = useState(false);
   const protectionState = ProtectionStateService.getInstance();
+  const gpsFreshness = GpsFreshnessService.getInstance();
   const [lastKnownLocation, setLastKnownLocation] = useState<LastKnownLocation | null>(() =>
     protectionState.getLastKnownLocation()
   );
@@ -166,6 +168,12 @@ export default function App() {
 
   const runEvaluation = useCallback(
     async (currentLoc: LocationPoint, zones: SafeZone[]) => {
+      const freshness = gpsFreshness.accept(currentLoc);
+      if (freshness.accepted === false) {
+        console.warn('[GPS] Ignoring unusable location fix', freshness.reason, freshness.ageMs);
+        return;
+      }
+
       const currentPolicy = alertPolicyManager.getConfig();
       const geofenceMonitor = GeofenceMonitor.getInstance();
       const geofenceEval = geofenceMonitor.evaluate(
@@ -209,6 +217,10 @@ export default function App() {
       } else if (assessment.state === 'SAFE' || assessment.state === 'RETURNED_TO_SAFE_ZONE') {
         protectionState.resolveIncident();
         setActiveIncident(protectionState.getIncident());
+        if (AudioService.getInstance().isSirenRunning()) {
+          AudioService.getInstance().stopEmergencySiren();
+        }
+        setIsSirenActive(false);
       }
 
       if (

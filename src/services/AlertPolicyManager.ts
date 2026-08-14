@@ -2,6 +2,7 @@ import { AlertPolicyConfig, LocationPoint, LoggedAlert, RiskAssessment } from '.
 import { SmsService } from './SmsService';
 import { AudioService } from './AudioService';
 import { OfflineQueueService } from './OfflineQueueService';
+import { randomHex } from './SecurityUtils';
 
 export class AlertPolicyManager {
   private static instance: AlertPolicyManager;
@@ -70,8 +71,6 @@ export class AlertPolicyManager {
         this.config = {
           ...this.config,
           ...parsed,
-          // Legacy sessions must not silently re-enable instant emergency mode.
-          instant1mExitEmergency: false,
         };
         this.saveConfig();
       }
@@ -138,7 +137,7 @@ export class AlertPolicyManager {
     const now = Date.now();
 
     if (!this.activeIncidentId) {
-      this.activeIncidentId = `inc_${now}_${Math.floor(Math.random() * 1000)}`;
+      this.activeIncidentId = `inc_${now}_${randomHex(8)}`;
       this.alertSentCount = 0;
       this.lastAlertTimestamp = 0;
     }
@@ -201,7 +200,7 @@ export class AlertPolicyManager {
     );
 
     const loggedAlert: LoggedAlert = {
-      id: `alt_${now}_${Math.floor(Math.random() * 1000)}`,
+      id: `alt_${now}_${randomHex(8)}`,
       incidentId,
       title,
       message,
