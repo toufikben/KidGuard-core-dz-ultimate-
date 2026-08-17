@@ -15,6 +15,8 @@ import {
   Save,
   Activity,
   Heart,
+  Mail,
+  MessageCircle,
 } from 'lucide-react';
 import { AlertPolicyConfig, HealthStatus, DeviceRole } from '../types';
 import { Language, translations } from '../translations';
