@@ -21,6 +21,24 @@ import java.util.ArrayList;
 public class DirectSmsPlugin extends Plugin {
 
     @PluginMethod
+    public void requestPermission(PluginCall call) {
+        if (getPermissionState("sms") == com.getcapacitor.PermissionState.GRANTED) {
+            JSObject result = new JSObject();
+            result.put("granted", true);
+            call.resolve(result);
+            return;
+        }
+        requestPermissionForAlias("sms", call, "permissionOnlyCallback");
+    }
+
+    @PermissionCallback
+    private void permissionOnlyCallback(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("granted", getPermissionState("sms") == com.getcapacitor.PermissionState.GRANTED);
+        call.resolve(result);
+    }
+
+    @PluginMethod
     public void send(PluginCall call) {
         if (getPermissionState("sms") != com.getcapacitor.PermissionState.GRANTED) {
             requestPermissionForAlias("sms", call, "smsPermissionCallback");

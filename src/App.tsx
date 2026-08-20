@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Capacitor } from '@capacitor/core';
+import { Geolocation } from '@capacitor/geolocation';
 import { App as CapApp } from '@capacitor/app';
 import {
   DeviceRole,
@@ -111,6 +112,8 @@ export default function App() {
   >('map');
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
+  const [locationPermissionReady, setLocationPermissionReady] = useState(!Capacitor.isNativePlatform());
+  const [showLocationRationale, setShowLocationRationale] = useState(false);
   const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
   const [isBgTracking, setIsBgTracking] = useState(false);
   const protectionState = ProtectionStateService.getInstance();
@@ -280,6 +283,42 @@ export default function App() {
     )
   );
 
+  // Explain location use before the native runtime permission prompt.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    Geolocation.checkPermissions()
+      .then((status) => {
+        const granted = status.location === 'granted' || status.coarseLocation === 'granted';
+        setLocationPermissionReady(granted);
+        setShowLocationRationale(!granted);
+      })
+      .catch((error) => {
+        console.warn('[Location] permission check failed', error);
+        setShowLocationRationale(true);
+      });
+  }, []);
+
+  const handleLocationPermissionRequest = async () => {
+    try {
+      const status = await Geolocation.requestPermissions({
+        permissions: ['location', 'coarseLocation'],
+      });
+      const granted = status.location === 'granted' || status.coarseLocation === 'granted';
+      setLocationPermissionReady(granted);
+      setShowLocationRationale(!granted);
+      if (!granted) {
+        setGeoError(
+          lang === 'ar'
+            ? 'لم يتم منح صلاحية الموقع. لا يمكن تشغيل التتبع حتى تسمح بها من إعدادات Android.'
+            : 'Location permission was not granted. Enable it in Android settings to start tracking.'
+        );
+      }
+    } catch (error) {
+      console.warn('[Location] permission request failed', error);
+      setShowLocationRationale(true);
+    }
+  };
+
   // Hybrid GPS: Background service on native (Android/iOS via Capacitor), HTML5 on web
   useEffect(() => {
     const bgService = BackgroundLocationService.getInstance();
@@ -298,6 +337,9 @@ export default function App() {
     };
 
     const startTracking = async () => {
+      if (Capacitor.isNativePlatform() && !locationPermissionReady) {
+        return;
+      }
       if (Capacitor.isNativePlatform()) {
         // Native background GPS
         unsub = bgService.onLocation(handleLocation);
@@ -392,7 +434,7 @@ export default function App() {
       }
       appStateHandle?.remove();
     };
-  }, [isSimulatingOutside, safeZones, runEvaluation, lang]);
+  }, [isSimulatingOutside, safeZones, runEvaluation, lang, locationPermissionReady]);
 
   useEffect(() => {
     const checkDeviceHealth = () => {
@@ -574,6 +616,19 @@ export default function App() {
         theme === 'light' ? 'light-mode-override' : ''
       }`}
     >
+      {showLocationRationale && Capacitor.isNativePlatform() && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/90 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-emerald-500/30 bg-slate-900 p-5 text-right shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="location-rationale-title">
+            <h2 id="location-rationale-title" className="text-lg font-bold text-emerald-300">السماح بتحديد موقع الطفل</h2>
+            <p className="mt-3 text-sm leading-6 text-slate-200">يستخدم KidGuard موقع الجهاز لمراقبة وجود الطفل داخل المناطق الآمنة وتنبيه الوالد عند الخروج منها. يعمل التتبع في الخلفية فقط أثناء تفعيل الحماية، وتظهر إشارة التتبع المستمرة من Android.</p>
+            <p className="mt-2 text-xs leading-5 text-slate-400">لن يبدأ التطبيق طلب صلاحية Android قبل ضغطك على زر المتابعة. يمكنك رفض الطلب، لكن التتبع والتنبيهات المرتبطة بالموقع لن تعملا.</p>
+            <div className="mt-5 flex gap-2">
+              <button type="button" onClick={() => setShowLocationRationale(false)} className="flex-1 rounded-xl border border-slate-700 px-3 py-2.5 text-sm text-slate-300">لاحقاً</button>
+              <button type="button" onClick={handleLocationPermissionRequest} className="flex-1 rounded-xl bg-emerald-600 px-3 py-2.5 text-sm font-bold text-white">متابعة والسماح</button>
+            </div>
+          </div>
+        </div>
+      )}
       <Navbar
         role={role}
         setRole={handleRoleChange}

@@ -3,6 +3,7 @@ import { LocationPoint } from '../types';
 import { randomHex } from './SecurityUtils';
 
 interface DirectSmsPlugin {
+  requestPermission(): Promise<{ granted: boolean }>;
   send(options: { phoneNumber: string; message: string }): Promise<{ sent: boolean }>;
 }
 
@@ -31,6 +32,17 @@ export class SmsService {
       SmsService.instance = new SmsService();
     }
     return SmsService.instance;
+  }
+
+  public async requestDirectSmsPermission(): Promise<boolean> {
+    if (!Capacitor.isNativePlatform()) return false;
+    try {
+      const result = await DirectSms.requestPermission();
+      return result.granted === true;
+    } catch (error) {
+      console.warn('[SmsService] SMS permission request failed', error);
+      return false;
+    }
   }
 
   public generateMapsUrl(latitude: number, longitude: number): string {

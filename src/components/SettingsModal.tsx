@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import {
   X,
   Settings,
@@ -22,6 +23,7 @@ import { AlertPolicyConfig, HealthStatus, DeviceRole } from '../types';
 import { Language, translations } from '../translations';
 import { hashPin } from '../services/SecurityUtils';
 import { privacyDataService } from '../services/PrivacyDataService';
+import { SmsService } from '../services/SmsService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -91,6 +93,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [privacyStatus, setPrivacyStatus] = useState('');
+  const [showSmsRationale, setShowSmsRationale] = useState(false);
 
   const handleExportData = () => {
     const payload = JSON.stringify(privacyDataService.exportData(), null, 2);
@@ -124,6 +127,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         return;
       }
     }
+    let effectiveSmsMode = smsMode;
+    if (smsMode === 'AUTO' && Capacitor.isNativePlatform()) {
+      const granted = await SmsService.getInstance().requestDirectSmsPermission();
+      if (!granted) {
+        effectiveSmsMode = 'CONFIRM';
+        window.alert(
+          lang === 'ar'
+            ? 'لم تُمنح صلاحية SMS. سيبقى التطبيق على وضع فتح الرسالة للتأكيد.'
+            : 'SMS permission was not granted. The app will keep the confirmation mode.'
+        );
+      }
+    }
+
     onUpdateAlertPolicy({
       parentPhone: parentPhone.trim(),
       childName: childName.trim(),
@@ -132,7 +148,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       triggerEmergencyOnExit,
       instant1mExitEmergency,
       autoSmsLocationOnExit,
-      smsMode,
+      smsMode: effectiveSmsMode,
       batterySmsEnabled,
       batteryAlertThreshold,
       followUpIntervalMinutes,
@@ -421,11 +437,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <span className="text-[11px] text-slate-200">فتح الرسالة للتأكيد</span>
                     </label>
                     <label className={`flex items-center gap-2 rounded-lg border p-2.5 cursor-pointer ${smsMode === 'AUTO' ? 'border-amber-400 bg-amber-500/10' : 'border-slate-700 bg-slate-900/60'}`}>
-                      <input type="radio" name="smsMode" checked={smsMode === 'AUTO'} onChange={() => setSmsMode('AUTO')} />
+                      <input
+                        type="radio"
+                        name="smsMode"
+                        checked={smsMode === 'AUTO'}
+                        onChange={() => {
+                          setSmsMode('AUTO');
+                          setShowSmsRationale(true);
+                        }}
+                      />
                       <span className="text-[11px] text-slate-200">إرسال تلقائي من Android</span>
                     </label>
                   </div>
                   <p className="text-[10px] leading-5 text-blue-200/70">الإرسال التلقائي يحتاج صلاحية SMS ويعمل عند تثبيت التطبيق مباشرة على Android. عند رفض الصلاحية سيعود التطبيق إلى رسالة جاهزة للتأكيد.</p>
+                  {showSmsRationale && smsMode === 'AUTO' && (
+                    <div className="rounded-lg border border-amber-400/40 bg-amber-500/10 p-3 text-[11px] leading-5 text-amber-100" role="alert">
+                      <p className="font-bold">قبل تفعيل الإرسال التلقائي</p>
+                      <p>سيطلب Android صلاحية إرسال SMS عند الضغط على حفظ. تُستخدم الصلاحية فقط لإرسال تنبيه موقع الطفل إلى رقم الوالد الذي أدخلته، ولا تُستخدم لقراءة الرسائل أو سجل المكالمات.</p>
+                      <div className="mt-2 flex gap-2">
+                        <button type="button" onClick={() => setShowSmsRationale(false)} className="rounded-md bg-amber-500 px-3 py-1.5 font-bold text-slate-950">فهمت، متابعة</button>
+                        <button type="button" onClick={() => { setSmsMode('CONFIRM'); setShowSmsRationale(false); }} className="rounded-md border border-slate-600 px-3 py-1.5 text-slate-200">استخدام التأكيد اليدوي</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
