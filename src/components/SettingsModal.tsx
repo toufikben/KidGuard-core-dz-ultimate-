@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import {
-  X,
   Settings,
   Globe,
   Sun,
