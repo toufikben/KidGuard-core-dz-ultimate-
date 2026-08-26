@@ -15,11 +15,20 @@ export class GeofenceMonitor {
   private consecutiveOutsideCount: number = 0;
   private consecutiveInsideCount: number = 0;
   private currentStatus: ExitCandidateStatus = 'SAFE_INSIDE';
+  private outsideSinceTimestamp: number | null = null;
 
-  // Config parameters
-  private readonly CONSECUTIVE_REQUIRED_FOR_EXIT = 3;
+  // Safe defaults; callers can override the two exit-confirmation values per policy.
+  private readonly DEFAULT_CONSECUTIVE_REQUIRED_FOR_EXIT = 3;
   private readonly CONSECUTIVE_REQUIRED_FOR_ENTRY = 2;
   private readonly HYSTERESIS_BUFFER_METERS = 15; // 15m buffer zone to avoid boundary oscillation
+
+  private clampExitReadings(value: number | undefined): number {
+    return Math.min(10, Math.max(1, Math.round(value ?? this.DEFAULT_CONSECUTIVE_REQUIRED_FOR_EXIT)));
+  }
+
+  private clampExitDelayMinutes(value: number | undefined): number {
+    return Math.min(30, Math.max(0, Number(value ?? 0)));
+  }
 
   private constructor() {}
 
@@ -70,7 +79,9 @@ export class GeofenceMonitor {
   public evaluate(
     location: LocationPoint,
     activeZones: SafeZone[],
-    instant1mExitEmergency: boolean = true
+    instant1mExitEmergency: boolean = true,
+    exitConfirmationsRequired?: number,
+    exitConfirmationDelayMinutes?: number
   ): GeofenceEvaluation {
     if (!activeZones || activeZones.length === 0) {
       return {
@@ -132,9 +143,13 @@ export class GeofenceMonitor {
       }
     }
 
+    const requiredOutsideReadings = this.clampExitReadings(exitConfirmationsRequired);
+    const requiredOutsideMinutes = this.clampExitDelayMinutes(exitConfirmationDelayMinutes);
+
     // State machine filter for candidate exit verification
     if (isInsideAnyZone) {
       this.consecutiveOutsideCount = 0;
+      this.outsideSinceTimestamp = null;
       this.consecutiveInsideCount++;
 
       if (
@@ -146,12 +161,23 @@ export class GeofenceMonitor {
     } else {
       this.consecutiveInsideCount = 0;
 
+      if (this.outsideSinceTimestamp === null) {
+        this.outsideSinceTimestamp = location.timestamp || Date.now();
+      }
+
       // Only count as candidate reading if GPS accuracy is reasonable (< 120m)
       if (location.accuracy <= 120) {
         this.consecutiveOutsideCount++;
       }
 
-      if (instant1mExitEmergency || this.consecutiveOutsideCount >= this.CONSECUTIVE_REQUIRED_FOR_EXIT) {
+      const outsideDurationMinutes = Math.max(
+        0,
+        ((location.timestamp || Date.now()) - this.outsideSinceTimestamp) / 60000
+      );
+      const readingsConfirmed = this.consecutiveOutsideCount >= requiredOutsideReadings;
+      const durationConfirmed = outsideDurationMinutes >= requiredOutsideMinutes;
+
+      if (instant1mExitEmergency || (readingsConfirmed && durationConfirmed)) {
         this.currentStatus = 'EXIT_CONFIRMED';
       } else if (this.currentStatus === 'SAFE_INSIDE') {
         this.currentStatus = 'EXIT_PENDING';
@@ -172,6 +198,7 @@ export class GeofenceMonitor {
   public resetState(): void {
     this.consecutiveOutsideCount = 0;
     this.consecutiveInsideCount = 0;
+    this.outsideSinceTimestamp = null;
     this.currentStatus = 'SAFE_INSIDE';
   }
 }

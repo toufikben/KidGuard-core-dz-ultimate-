@@ -59,6 +59,19 @@ assert(geofence.evaluate(outsideLocation, [zone], false).status === 'EXIT_PENDIN
 assert(geofence.evaluate(outsideLocation, [zone], false).status === 'EXIT_PENDING', 'The second reliable exit must remain pending');
 assert(geofence.evaluate(outsideLocation, [zone], false).status === 'EXIT_CONFIRMED', 'The third reliable exit must be confirmed');
 
+// Parent-configurable confirmation: four reliable readings are required when selected.
+geofence.resetState();
+for (let i = 1; i <= 3; i++) {
+  assert(geofence.evaluate({ ...outsideLocation, timestamp: 1_700_000_000_000 + i * 60_000 }, [zone], false, 4, 0).status === 'EXIT_PENDING', 'Custom reading threshold must remain pending before the fourth fix');
+}
+assert(geofence.evaluate({ ...outsideLocation, timestamp: 1_700_000_240_000 }, [zone], false, 4, 0).status === 'EXIT_CONFIRMED', 'Custom reading threshold must confirm on the fourth fix');
+
+// Parent-configurable delay: the count alone must not confirm before the selected duration.
+geofence.resetState();
+assert(geofence.evaluate({ ...outsideLocation, timestamp: 1_700_001_000_000 }, [zone], false, 1, 5).status === 'EXIT_PENDING', 'A time delay must keep the first outside fix pending');
+assert(geofence.evaluate({ ...outsideLocation, timestamp: 1_700_001_240_000 }, [zone], false, 1, 5).status === 'EXIT_PENDING', 'An exit before five minutes must remain pending');
+assert(geofence.evaluate({ ...outsideLocation, timestamp: 1_700_001_300_000 }, [zone], false, 1, 5).status === 'EXIT_CONFIRMED', 'The configured five-minute delay must then confirm exit');
+
 const risk = RiskEngine.getInstance();
 risk.resetEngine();
 const pendingAssessment = risk.assessRisk(

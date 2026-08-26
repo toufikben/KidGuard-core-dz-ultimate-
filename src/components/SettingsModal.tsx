@@ -18,12 +18,20 @@ import {
   Heart,
   Mail,
   MessageCircle,
+  HelpCircle,
+  Key,
+  ExternalLink,
+  CheckCircle,
+  X,
+  Send,
+  Loader2,
 } from 'lucide-react';
 import { AlertPolicyConfig, HealthStatus, DeviceRole } from '../types';
 import { Language, translations } from '../translations';
 import { hashPin } from '../services/SecurityUtils';
 import { privacyDataService } from '../services/PrivacyDataService';
 import { SmsService } from '../services/SmsService';
+import { EmailService } from '../services/EmailService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -69,12 +77,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [instant1mExitEmergency, setInstant1mExitEmergency] = useState(
     alertPolicy.instant1mExitEmergency ?? false
   );
-  const [autoSmsLocationOnExit, setAutoSmsLocationOnExit] = useState(
-    alertPolicy.autoSmsLocationOnExit ?? true
+  const [exitConfirmationsRequired, setExitConfirmationsRequired] = useState(
+    alertPolicy.exitConfirmationsRequired ?? 3
   );
-  const [smsMode, setSmsMode] = useState<'AUTO' | 'CONFIRM'>(
-    alertPolicy.smsMode ?? 'CONFIRM'
+  const [exitConfirmationDelayMinutes, setExitConfirmationDelayMinutes] = useState(
+    alertPolicy.exitConfirmationDelayMinutes ?? 0
   );
+  const [autoSmsLocationOnExit] = useState(false);
+  const [smsMode] = useState<'CONFIRM'>('CONFIRM');
+  const [emailEnabled, setEmailEnabled] = useState(alertPolicy.emailEnabled ?? true);
+  const [emailMode, setEmailMode] = useState<'SMTP' | 'MAILTO'>(alertPolicy.emailMode ?? 'SMTP');
+  const [emailSender, setEmailSender] = useState(alertPolicy.emailSender ?? '');
+  const [emailRecipient, setEmailRecipient] = useState(alertPolicy.emailRecipient ?? '');
+  const [emailSmtpHost, setEmailSmtpHost] = useState(alertPolicy.emailSmtpHost ?? 'smtp.gmail.com');
+  const [emailSmtpPort, setEmailSmtpPort] = useState(alertPolicy.emailSmtpPort ?? 587);
+  const [emailSmtpUsername, setEmailSmtpUsername] = useState(alertPolicy.emailSmtpUsername ?? '');
+  const [emailSmtpPassword, setEmailSmtpPassword] = useState('');
+  const [showEmailHelp, setShowEmailHelp] = useState(false);
+  const [showSmtpGuide, setShowSmtpGuide] = useState(false);
+  const [isTestingEmail, setIsTestingEmail] = useState(false);
   const [batterySmsEnabled, setBatterySmsEnabled] = useState(alertPolicy.batterySmsEnabled ?? true);
   const [batteryAlertThreshold, setBatteryAlertThreshold] = useState(alertPolicy.batteryAlertThreshold ?? 15);
   const [followUpIntervalMinutes, setFollowUpIntervalMinutes] = useState(
@@ -127,19 +148,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         return;
       }
     }
-    let effectiveSmsMode = smsMode;
-    if (smsMode === 'AUTO' && Capacitor.isNativePlatform()) {
-      const granted = await SmsService.getInstance().requestDirectSmsPermission();
-      if (!granted) {
-        effectiveSmsMode = 'CONFIRM';
-        window.alert(
-          lang === 'ar'
-            ? 'لم تُمنح صلاحية SMS. سيبقى التطبيق على وضع فتح الرسالة للتأكيد.'
-            : 'SMS permission was not granted. The app will keep the confirmation mode.'
-        );
+    if (emailMode === 'SMTP' && emailEnabled && emailSmtpPassword) {
+      try {
+        await EmailService.getInstance().saveSmtpCredentials(emailSmtpHost, emailSmtpPort, emailSmtpUsername || emailSender || emailRecipient, emailSmtpPassword);
+      } catch (err: any) {
+        if (Capacitor.isNativePlatform()) {
+          console.error("SMTP Save Error:", err);
+          // Only alert if it's a fatal error that prevents saving entirely
+          if (err.message && !err.message.includes('KeyStore')) {
+            window.alert(lang === 'ar' ? `تعذر حفظ إعدادات SMTP: ${err.message}` : `Could not save SMTP settings: ${err.message}`);
+            return;
+          }
+        }
       }
     }
-
     onUpdateAlertPolicy({
       parentPhone: parentPhone.trim(),
       childName: childName.trim(),
@@ -147,8 +169,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       firstExitAlertEnabled,
       triggerEmergencyOnExit,
       instant1mExitEmergency,
-      autoSmsLocationOnExit,
-      smsMode: effectiveSmsMode,
+      exitConfirmationsRequired,
+      exitConfirmationDelayMinutes,
+      autoSmsLocationOnExit: false,
+      smsMode: 'CONFIRM',
+      emailEnabled,
+      emailMode,
+      emailSender: emailSender.trim(),
+      emailRecipient: emailRecipient.trim(),
+      emailSmtpHost: emailSmtpHost.trim(),
+      emailSmtpPort,
+      emailSmtpUsername: emailSmtpUsername.trim() || emailSender.trim(),
       batterySmsEnabled,
       batteryAlertThreshold,
       followUpIntervalMinutes,
@@ -160,9 +191,77 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     });
     setNewPin('');
     setConfirmPin('');
+    // Keep emailSmtpPassword in state so it doesn't disappear from UI after save
+    // setEmailSmtpPassword(''); 
+    setShowSmtpGuide(false);
     setSavedSuccess(true);
     setPrivacyStatus(lang === 'ar' ? 'تم حفظ الإعدادات محليًا على هذا الجهاز.' : 'Settings saved locally on this device.');
     setTimeout(() => setSavedSuccess(false), 2500);
+  };
+
+  const handleTestEmail = async () => {
+    if (!emailRecipient) {
+      window.alert(lang === 'ar' ? 'يرجى إدخال بريد الوالد أولاً.' : 'Please enter parent email first.');
+      return;
+    }
+    if (emailMode === 'SMTP' && !emailSmtpPassword) {
+      window.alert(lang === 'ar' ? 'يرجى إدخال كلمة مرور التطبيق لتجربة SMTP.' : 'Please enter App Password for SMTP test.');
+      return;
+    }
+
+    setIsTestingEmail(true);
+    try {
+      // Temporarily save for the test if SMTP
+      if (emailMode === 'SMTP') {
+        try {
+          // Use recipient as sender/username for simplified Gmail SMTP
+          await EmailService.getInstance().saveSmtpCredentials(emailSmtpHost, emailSmtpPort, emailRecipient, emailSmtpPassword);
+        } catch (saveError: any) {
+          console.error('Save Error during test:', saveError);
+          // If it's just a KeyStore warning but we have fallback, we might still want to try sending
+          if (saveError.message && !saveError.message.includes('KeyStore')) {
+             window.alert(lang === 'ar' ? `❌ تعذر حفظ الإعدادات: ${saveError.message}` : `❌ Failed to save settings: ${saveError.message}`);
+             setIsTestingEmail(false);
+             return;
+          }
+        }
+      }
+      
+      const success = await EmailService.getInstance().sendEmail(
+        emailRecipient,
+        lang === 'ar' ? 'رسالة تجربة KidGuard' : 'KidGuard Test Message',
+        lang === 'ar' ? 'هذه رسالة تجريبية للتأكد من إعدادات البريد في تطبيق KidGuard.' : 'This is a test message to verify email settings in KidGuard app.',
+        emailMode
+      );
+
+      if (success) {
+        if (emailMode === 'MAILTO') {
+          window.alert(lang === 'ar' 
+            ? 'ℹ️ تم فتح تطبيق البريد وتجهيز الرسالة. يرجى الضغط على "إرسال" من داخل تطبيق البريد لإتمام العملية.' 
+            : 'ℹ️ Mail app opened. Please tap "Send" inside the mail app to complete.');
+        } else {
+          window.alert(lang === 'ar' ? '✅ تم إرسال رسالة التجربة بنجاح!' : '✅ Test email sent successfully!');
+        }
+      } else {
+        window.alert(lang === 'ar' ? '❌ فشل إرسال رسالة التجربة. تحقق من الإعدادات أو اتصال الإنترنت.' : '❌ Failed to send test email. Check settings or internet connection.');
+      }
+    } catch (error: any) {
+      console.error('Test Email Error:', error);
+      const errorMsg = error.message || String(error);
+      let userMsg = lang === 'ar' ? '❌ حدث خطأ أثناء التجربة: ' : '❌ Error during test: ';
+      
+      if (errorMsg.includes('auth') || errorMsg.includes('Password')) {
+        userMsg += lang === 'ar' ? 'خطأ في كلمة مرور التطبيق أو البريد.' : 'Invalid App Password or email.';
+      } else if (errorMsg.includes('network') || errorMsg.includes('timeout') || errorMsg.includes('connect')) {
+        userMsg += lang === 'ar' ? 'خطأ في الاتصال بالإنترنت.' : 'Internet connection error.';
+      } else {
+        userMsg += lang === 'ar' ? 'تأكد من إعدادات SMTP وخدمات Google.' : 'Check SMTP settings and Google services.';
+      }
+      
+      window.alert(userMsg);
+    } finally {
+      setIsTestingEmail(false);
+    }
   };
 
   return (
@@ -405,61 +504,96 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
               </label>
 
-              {/* Option 2: Automatic Instant Location SMS */}
-              <label className="flex items-center justify-between p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-500/30 cursor-pointer hover:border-emerald-400 transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
-                    <Smartphone className="w-5 h-5 text-emerald-400" />
-                  </div>
-                  <div>
-                    <span className="text-xs font-bold text-emerald-200 block">
-                      إرسال تلقائي فوري للموقع الجغرافي برسالة نصية (SMS)
-                    </span>
-                    <span className="text-[10px] text-emerald-300/80 block mt-0.5">
-                      إرسال SMS تلقائياً يحتوي على رابط Google Maps لموقع الطفل فور الخروج من المنطقة الآمنة
-                    </span>
-                  </div>
+              <div className="rounded-xl border border-blue-500/30 bg-blue-950/30 p-3 space-y-3">
+                <p className="text-xs font-bold text-blue-200">تأكيد الخروج من المنطقة الآمنة</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="flex items-center justify-between gap-2 rounded-lg border border-slate-700 bg-slate-900/60 p-2.5 text-[11px]">عدد القراءات الموثوقة<input type="number" min={1} max={10} value={exitConfirmationsRequired} onChange={(e) => setExitConfirmationsRequired(Math.min(10, Math.max(1, Number(e.target.value) || 1)))} className="w-16 bg-slate-950 border border-slate-700 rounded-md px-2 py-1 text-center" /></label>
+                  <label className="flex items-center justify-between gap-2 rounded-lg border border-slate-700 bg-slate-900/60 p-2.5 text-[11px]">مدة التأكيد بالدقائق<input type="number" min={0} max={30} value={exitConfirmationDelayMinutes} onChange={(e) => setExitConfirmationDelayMinutes(Math.min(30, Math.max(0, Number(e.target.value) || 0)))} className="w-16 bg-slate-950 border border-slate-700 rounded-md px-2 py-1 text-center" /></label>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={autoSmsLocationOnExit}
-                  onChange={(e) => setAutoSmsLocationOnExit(e.target.checked)}
-                  className="w-5 h-5 rounded text-emerald-600 focus:ring-emerald-500 bg-slate-800 border-emerald-700 shrink-0"
-                />
-              </label>
+                <p className="text-[10px] leading-5 text-blue-200/70">يمكنك الزيادة أو النقصان. يستعمل التطبيق قراءة واحدة على الأقل و10 كحد أقصى، ومدة من 0 إلى 30 دقيقة لتقليل الإنذارات الكاذبة.</p>
+              </div>
 
-              {autoSmsLocationOnExit && (
-                <div className="rounded-xl border border-blue-500/30 bg-blue-950/30 p-3 space-y-2">
-                  <p className="text-xs font-bold text-blue-200">طريقة إرسال SMS عند الخطر</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <label className={`flex items-center gap-2 rounded-lg border p-2.5 cursor-pointer ${smsMode === 'CONFIRM' ? 'border-blue-400 bg-blue-500/10' : 'border-slate-700 bg-slate-900/60'}`}>
-                      <input type="radio" name="smsMode" checked={smsMode === 'CONFIRM'} onChange={() => setSmsMode('CONFIRM')} />
-                      <span className="text-[11px] text-slate-200">فتح الرسالة للتأكيد</span>
-                    </label>
-                    <label className={`flex items-center gap-2 rounded-lg border p-2.5 cursor-pointer ${smsMode === 'AUTO' ? 'border-amber-400 bg-amber-500/10' : 'border-slate-700 bg-slate-900/60'}`}>
-                      <input
-                        type="radio"
-                        name="smsMode"
-                        checked={smsMode === 'AUTO'}
-                        onChange={() => {
-                          setSmsMode('AUTO');
-                          setShowSmsRationale(true);
-                        }}
-                      />
-                      <span className="text-[11px] text-slate-200">إرسال تلقائي من Android</span>
-                    </label>
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/30 p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Mail className="w-5 h-5 text-emerald-400" />
+                    <div><p className="text-xs font-bold text-emerald-200">إرسال الموقع بالبريد الإلكتروني</p><p className="text-[10px] text-emerald-300/80">إرسال تلقائي عند تأكيد الخروج أو فتح تطبيق البريد يدوياً</p></div>
                   </div>
-                  <p className="text-[10px] leading-5 text-blue-200/70">الإرسال التلقائي يحتاج صلاحية SMS ويعمل عند تثبيت التطبيق مباشرة على Android. عند رفض الصلاحية سيعود التطبيق إلى رسالة جاهزة للتأكيد.</p>
-                  {showSmsRationale && smsMode === 'AUTO' && (
-                    <div className="rounded-lg border border-amber-400/40 bg-amber-500/10 p-3 text-[11px] leading-5 text-amber-100" role="alert">
-                      <p className="font-bold">قبل تفعيل الإرسال التلقائي</p>
-                      <p>سيطلب Android صلاحية إرسال SMS عند الضغط على حفظ. تُستخدم الصلاحية فقط لإرسال تنبيه موقع الطفل إلى رقم الوالد الذي أدخلته، ولا تُستخدم لقراءة الرسائل أو سجل المكالمات.</p>
-                      <div className="mt-2 flex gap-2">
-                        <button type="button" onClick={() => setShowSmsRationale(false)} className="rounded-md bg-amber-500 px-3 py-1.5 font-bold text-slate-950">فهمت، متابعة</button>
-                        <button type="button" onClick={() => { setSmsMode('CONFIRM'); setShowSmsRationale(false); }} className="rounded-md border border-slate-600 px-3 py-1.5 text-slate-200">استخدام التأكيد اليدوي</button>
-                      </div>
+                  <div className="flex items-center gap-2"><button type="button" onClick={() => setShowEmailHelp(!showEmailHelp)} title="شرح البريد"><HelpCircle className="w-4 h-4 text-cyan-300" /></button><input type="checkbox" checked={emailEnabled} onChange={(e) => setEmailEnabled(e.target.checked)} className="w-5 h-5 rounded text-emerald-600 bg-slate-800" /></div>
+                </div>
+                {showEmailHelp && <div className="rounded-lg border border-cyan-400/30 bg-cyan-950/30 p-3 text-[11px] leading-5 text-cyan-100">
+                  {lang === 'ar' ? 'خيار SMTP يرسل التنبيه أوتوماتيكياً في الخلفية فور وقوع الخطر، أما خيار mailto فيتطلب تدخلاً يدوياً لضغط زر إرسال. لضمان أقصى حماية، ننصح بتفعيل SMTP.' : 'SMTP sends alerts automatically in the background, while mailto requires manual intervention to press send. For maximum safety, we recommend using SMTP.'}
+                </div>}
+                {emailEnabled && <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2"><label className={`flex items-center gap-2 rounded-lg border p-2.5 cursor-pointer ${emailMode === 'SMTP' ? 'border-emerald-400 bg-emerald-500/10' : 'border-slate-700 bg-slate-900/60'}`}><input type="radio" name="emailMode" checked={emailMode === 'SMTP'} onChange={() => setEmailMode('SMTP')} /><span className="text-[11px]">SMTP (تلقائي)</span></label><label className={`flex items-center gap-2 rounded-lg border p-2.5 cursor-pointer ${emailMode === 'MAILTO' ? 'border-blue-400 bg-blue-500/10' : 'border-slate-700 bg-slate-900/60'}`}><input type="radio" name="emailMode" checked={emailMode === 'MAILTO'} onChange={() => setEmailMode('MAILTO')} /><span className="text-[11px]">mailto (يدوي)</span></label></div>
+                  
+                  <div className="space-y-2">
+                    <input type="email" required value={emailRecipient} onChange={(e) => {
+                      setEmailRecipient(e.target.value);
+                      if (emailMode === 'SMTP') setEmailSender(e.target.value);
+                    }} placeholder={lang === 'ar' ? 'بريد الوالد المستلم' : 'Recipient Email'} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs" />
+                  </div>
+
+                  {emailMode === 'SMTP' && <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input type="password" value={emailSmtpPassword} onChange={(e) => setEmailSmtpPassword(e.target.value)} placeholder={lang === 'ar' ? 'كلمة مرور التطبيق (16 حرفاً)' : 'App Password (16 chars)'} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs pr-8 font-mono" />
+                      <Key className="absolute right-2.5 top-2.5 w-3.5 h-3.5 text-slate-500" />
                     </div>
-                  )}
+                    <button type="button" onClick={() => setShowSmtpGuide(true)} className="px-3 py-2 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors"><HelpCircle className="w-4 h-4" /></button>
+                  </div>}
+                  <button
+                    type="button"
+                    onClick={handleTestEmail}
+                    disabled={isTestingEmail}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 text-xs font-bold hover:bg-slate-750 transition-all disabled:opacity-50"
+                  >
+                    {isTestingEmail ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Send className="w-3.5 h-3.5" />
+                    )}
+                    {lang === 'ar' ? 'تجربة إرسال رسالة تحقق' : 'Send Test Verification Email'}
+                  </button>
+                </>}
+              </div>
+
+              {showSmtpGuide && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-sm">
+                  <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                    <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+                      <div className="flex items-center gap-2.5 text-emerald-400"><Key className="w-5 h-5" /><h3 className="font-bold text-slate-100">{lang === 'ar' ? 'شرح إنشاء كلمة مرور التطبيق' : 'App Password Guide'}</h3></div>
+                      <button onClick={() => setShowSmtpGuide(false)} className="p-1.5 rounded-full hover:bg-slate-800 text-slate-400 transition-colors"><X className="w-5 h-5" /></button>
+                    </div>
+                    <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+                      <div className="rounded-2xl bg-amber-500/10 border border-amber-500/20 p-4 mb-2">
+                        <p className="text-xs leading-6 text-amber-200 font-bold">
+                          {lang === 'ar' ? '⚠️ تنبيه هام: هذه ليست كلمة سر الإيميل العادية الخاصة بك.' : '⚠️ Important: This is NOT your regular email password.'}
+                        </p>
+                        <p className="text-[10px] leading-5 text-amber-300/80 mt-1">
+                          {lang === 'ar' ? 'تتطلب Google استخدام «كلمة مرور تطبيق» خفية مكونة من 16 حرفاً لإرسال الرسائل بأمان دون مشاركة كلمة مرور حسابك الأصلية.' : 'Google requires a hidden 16-character "App Password" to send emails securely without sharing your main account password.'}
+                        </p>
+                      </div>
+                      {[
+                        { step: 1, ar: 'تفعيل التحقق بخطوتين', en: 'Enable 2-Step Verification', descAr: 'تأكد من تفعيل (2-Step Verification) في حساب Google الخاص بك.', descEn: 'Make sure 2-Step Verification is enabled in your Google Account.' },
+                        { step: 2, ar: 'فتح صفحة كلمات مرور التطبيقات', en: 'Open App Passwords Page', descAr: 'انتقل إلى صفحة App Passwords في أمان حساب Google.', descEn: 'Go to the App Passwords page in your Google Security settings.' },
+                        { step: 3, ar: 'إنشاء كلمة مرور جديدة', en: 'Create New Password', descAr: 'اكتب اسم التطبيق (مثال: حماية الهاتف) واضغط على زر إنشاء (Create).', descEn: 'Type app name (e.g., Phone Guard) and click Create.' },
+                        { step: 4, ar: 'نسخ الرمز في التطبيق', en: 'Copy Code to App', descAr: 'انسخ الرمز المكون من 16 حرفاً باللون الأصفر والصقه في حقل كلمة المرور بالتطبيق.', descEn: 'Copy the 16-character yellow code and paste it into the app password field.' }
+                      ].map((s) => (
+                        <div key={s.step} className="flex gap-4 p-3 rounded-2xl bg-slate-950/40 border border-slate-800/50">
+                          <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-bold text-sm shrink-0">{s.step}</div>
+                          <div><h4 className="text-xs font-bold text-emerald-200 mb-1">{lang === 'ar' ? s.ar : s.en}</h4><p className="text-[10px] leading-5 text-slate-400">{lang === 'ar' ? s.descAr : s.descEn}</p></div>
+                        </div>
+                      ))}
+                      <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full p-3 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 text-xs font-bold hover:bg-cyan-500/20 transition-all mt-2">
+                        {lang === 'ar' ? 'الانتقال لصفحة كلمات مرور تطبيقات Google' : 'Go to Google App Passwords Page'} <ExternalLink className="w-4 h-4" />
+                      </a>
+                    </div>
+                    <div className="p-5 bg-slate-950/50">
+                      <button onClick={() => setShowSmtpGuide(false)} className="w-full py-3.5 rounded-2xl bg-cyan-500 text-slate-950 font-bold text-sm shadow-lg shadow-cyan-500/20 hover:scale-[1.02] active:scale-95 transition-all">
+                        {lang === 'ar' ? 'فهمت ذلك، العودة للإعدادات' : 'Got it, back to settings'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 

@@ -1,5 +1,6 @@
 import { AlertPolicyConfig, LocationPoint, LoggedAlert, RiskAssessment } from '../types';
 import { SmsService } from './SmsService';
+import { EmailService } from './EmailService';
 import { AudioService } from './AudioService';
 import { OfflineQueueService } from './OfflineQueueService';
 import { randomHex } from './SecurityUtils';
@@ -12,8 +13,17 @@ export class AlertPolicyManager {
     triggerEmergencyOnExit: true,
     // Safety default: require confirmed geofence exit before emergency escalation.
     instant1mExitEmergency: false,
-    autoSmsLocationOnExit: true,
+    autoSmsLocationOnExit: false,
     smsMode: 'CONFIRM',
+    emailEnabled: true,
+    emailMode: 'SMTP',
+    emailSender: '',
+    emailRecipient: '',
+    emailSmtpHost: 'smtp.gmail.com',
+    emailSmtpPort: 587,
+    emailSmtpUsername: '',
+    exitConfirmationsRequired: 3,
+    exitConfirmationDelayMinutes: 0,
     followUpIntervalMinutes: 5,
     maxFollowUpAlerts: 3,
     resetOnReturn: true,
@@ -168,30 +178,27 @@ export class AlertPolicyManager {
     this.triggerSoundAlert();
 
     let smsSent = false;
+    let emailSent = false;
 
-    // FIX: respect both smsEnabled AND autoSmsLocationOnExit
-    const shouldSendSms =
-      this.config.smsEnabled &&
-      !!this.config.parentPhone &&
-      (this.config.autoSmsLocationOnExit || assessment.state === 'EMERGENCY');
-
-    if (shouldSendSms) {
-      const res = await SmsService.getInstance().sendAlertSms(
-        this.config.parentPhone,
+    if (this.config.emailEnabled && this.config.emailRecipient) {
+      const res = await EmailService.getInstance().sendAlert(
+        this.config.emailRecipient,
         this.config.childName,
         reason,
         location,
-        this.config.smsMode === 'AUTO' ? 'AUTO' : 'CONFIRM'
+        this.config.emailMode === 'MAILTO' ? 'MAILTO' : 'SMTP'
       );
-      smsSent = res.success;
-      if (!res.success && this.config.smsMode === 'AUTO') {
+      emailSent = res.success;
+      if (!res.success) {
         OfflineQueueService.getInstance().enqueueEvent(
-          'RISK_HIGH',
-          incidentId,
-          'child-local',
-          { kind: 'sms', phoneNumber: this.config.parentPhone, childName: this.config.childName, reason, location },
+          'RISK_HIGH', incidentId, 'child-local',
+          { kind: 'email', mode: this.config.emailMode, recipient: this.config.emailRecipient, childName: this.config.childName, reason, location },
         );
       }
+    } else if (this.config.smsEnabled && this.config.parentPhone) {
+      // SMS remains an explicit composer fallback only; no direct SMS is sent.
+      const res = await SmsService.getInstance().sendAlertSms(this.config.parentPhone, this.config.childName, reason, location, 'CONFIRM');
+      smsSent = res.success;
     }
 
     const mapsLink = SmsService.getInstance().generateMapsUrl(
@@ -208,6 +215,7 @@ export class AlertPolicyManager {
       location,
       timestamp: now,
       smsSent,
+      emailSent,
       mapsLink,
     };
 
@@ -231,9 +239,9 @@ export class AlertPolicyManager {
       this.config.childName,
       `انخفاض حاد في البطارية: ${batteryLevel}%`,
       location,
-      this.config.smsMode === 'AUTO' ? 'AUTO' : 'CONFIRM'
+      'CONFIRM'
     );
-    if (!result.success && this.config.smsMode === 'AUTO') {
+    if (!result.success) {
       OfflineQueueService.getInstance().enqueueEvent(
         'BATTERY_CRITICAL',
         `battery_${now}`,

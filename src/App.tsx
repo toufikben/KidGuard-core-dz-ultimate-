@@ -182,7 +182,9 @@ export default function App() {
       const geofenceEval = geofenceMonitor.evaluate(
         currentLoc,
         zones,
-        currentPolicy.instant1mExitEmergency ?? false
+        currentPolicy.instant1mExitEmergency ?? false,
+        currentPolicy.exitConfirmationsRequired,
+        currentPolicy.exitConfirmationDelayMinutes
       );
 
       const riskEngine = RiskEngine.getInstance();
