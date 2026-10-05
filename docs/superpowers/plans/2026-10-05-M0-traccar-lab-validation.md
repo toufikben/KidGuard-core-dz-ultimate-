@@ -6,7 +6,7 @@
 
 **Architecture:** خادم Traccar 6.16.0 قائم بـ`java -jar` + H2 على حاسوب المالك (معمل فقط، لا نشر). أجهزة الطرف الأولياء لا تُبنى بعد؛ بدلاً منها **آلة قياس** صغيرة (Node) تستقبل `event.forward.url` وتكتب NDJSON، وسكربتات تغذية اصطناعية ترفع إحداثيات عبر بروتوكول `osmand`. كل شيء داخل `lab/` وموسوم «أداة قياس» — لا شيء منه يدخل حزمة الإنتاج.
 
-**Tech Stack:** Traccar 6.16.0 (Apache-2.0) + Java 21 (`jdk-21.0.7.6-hotspot`) + H2؛ Node 22 (CI) / Node 24 (محلي) بدون أي اعتمادية جديدة (`node:test`)؛ Git Bash + curl؛ GitHub Actions للتحقق؛ adb للتحقق البصري على Realme.
+**Tech Stack:** Traccar 6.16.0 (Apache-2.0) + **Java ≥21 كما هو موجود فعلياً: JDK 25.0.2** (`/c/Program Files/Java/jdk-25.0.2`) — **تصحيح قياس في Task 1:** لا `jdk-21.0.7.6-hotspot` على هذا الجهاز، و`java` على PATH هو Temurin **17.0.20.1** ولا يشغّل بايت-كود 21 (`build.gradle:14-15` في مصدر Traccar يستهدف VERSION_21 ⇒ `UnsupportedClassVersionError`)؛ H2؛ Node 22 (CI) / Node 24 (محلي) بدون أي اعتمادية جديدة (`node:test`)؛ Git Bash + curl؛ GitHub Actions للتحقق؛ adb للتحقق البصري على Realme.
 
 **Spec:** `docs/superpowers/specs/2026-10-05-parent-side-tracing-design.md` (المعتمدة 2026-10-05) — اقرأها مع هذه الخطة؛ كل مهمة تحتجّ بمادة منها.
 
@@ -16,7 +16,7 @@
 
 - **الحاسوب لا يبني APK.** التحقق من أي بناء = GitHub Actions حصراً. الجهاز يخدم `java -jar` للمعمل فقط.
 - **بوابة M0:** لا كود إنتاج قبل رؤية `geofenceExit` حقيقي من مصدر حقيقي (§14). المخرجات أدناه كلها أدوات قياس.
-- Traccar **مثبّت على 6.16.0** (≥6.12 إلزامي لـCVE-2025-68930)، Java 21، H2، **لا Docker ولا Postgres/Timescale** على هذا الجهاز (§10).
+- Traccar **مثبّت على 6.16.0** (≥6.12 إلزامي لـCVE-2025-68930)، **Java ≥21 (على هذا الجهاز: JDK 25.0.2 — لا 21 مثبّت، وPATH يحمل 17 فلا تعتمد عليه)**، H2، **لا Docker ولا Postgres/Timescale** على هذا الجهاز (§10). تشغيل الجارفة على Java 25 **غير مُتحقَّق بعد** — يقيسه Task 2 عند أول تشغيل، ولا يُكتب «يعمل» قبل رؤية سجل الإقلاع.
 - **لا أسرار في المستودع:** الإعداد الحقيقي يُولَّد محلياً من قالب؛ القالب يحوي `${VAR}` فقط.
 - **لا بيانات حقيقية:** إحداثيات المركزة كلها حول نقطة اصطناعية `36.7538, 3.0588` (وسط الجزائر)، وأسماء الأجهزة `lab-child-*`، والبريد `lab@example.com`. لا أسماء أطفال ولا مواقع حقيقية (§9.10).
 - **لا push إلى `main` أثناء M0:** الفرع `lab/m0`، وworkflow المعمل يعمل على مسارات `lab/**`. سببان: عدم استهلاك حصة الـartifacts (~500MB) بـAPK لا يحتاجها المعمل، وعدم إرسال كود إنتاج قبل البوابة.
@@ -146,7 +146,7 @@ git checkout -b lab/m0
 في `package.json`، حقل `scripts` يُضاف إليه (لا يُحذف شيء):
 
 ```json
-    "test:lab": "node --test lab/tests/",
+    "test:lab": "node --test \"lab/tests/*.test.mjs\"",
     "lab:render": "node lab/scripts/render-config.mjs",
     "lab:check": "node lab/scripts/check-config.mjs --template lab/traccar/kidguard-lab.template.xml",
     "lab:report": "node lab/sink/report.mjs",
@@ -172,11 +172,11 @@ traccar/server-*.log
 
 ```bash
 #!/usr/bin/env bash
-# Lab-only: run the pinned Traccar tree against the generated config.
+# Lab-only: run the pinned Traccar tree (needs Java >= 21 bytecode; PATH java here is 17, so LAB_JAVA_BIN defaults to JDK 25).
 set -euo pipefail
 LAB_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TREE_DIR="${LAB_TRACCAR_DIR:-$LAB_ROOT/traccar/traccar-other-6.16.0}"
-JAVA_BIN="${LAB_JAVA_BIN:-/c/Program Files/Java/jdk-21.0.7.6-hotspot/bin/java.exe}"
+JAVA_BIN="${LAB_JAVA_BIN:-/c/Program Files/Java/jdk-25.0.2/bin/java.exe}"
 cd "$TREE_DIR"
 exec "$JAVA_BIN" -Xmx512m -XX:+ExitOnOutOfMemoryError \
   -jar tracker-server.jar "$LAB_ROOT/traccar/kidguard-lab.xml"
@@ -226,12 +226,14 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
+      - name: Fail if no lab tests exist
+        run: test -n "$(ls lab/tests/*.test.mjs 2>/dev/null)"
+
       - name: Run lab tests
         run: npm run test:lab
-
-      - name: Validate lab config template
-        run: npm run lab:check
 ```
+
+**خطوتان مصححتان بالقياس (Task 1):** بلا خطوة «Fail if no lab tests exist» يصبح `npm run test:lab` **أخضر وهو صفر اختبارات** (`node --test "<glob لا يطابق>"` ⇒ `tests 0` وexit 0 على Node 24/win32) — وهو عين الإنذار الكاذب الذي يمنعته قاعدة «قِس لا تروِ». وشهادة الإعداد `npm run lab:check` **تنتقل إلى Task 2** لأن مستهدَفَيها (`check-config.mjs` والقالب) يُولَدان هناك؛ إدراجها في Task 1 يجعل بوابته حمراء. **القاعدة للمهام 2–10:** لا يعتبر أي تشغيل دليلاً إلا إن ظهر سطر `tests N` مع N ≥ عدد اختبارات المهمة، وإلا فهو NOT RUN.
 
 - [ ] **Step 7: `lab/README.md`** (حدود ما يثبته المعمل)
 
