@@ -1,0 +1,11 @@
+name: Lab canary
+
+on:
+  push:
+    branches: ["lab/**"]
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo canary-ok
