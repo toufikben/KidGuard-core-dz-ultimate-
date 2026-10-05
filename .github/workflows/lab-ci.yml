@@ -40,3 +40,6 @@ jobs:
 
       - name: Run lab tests
         run: npm run test:lab
+
+      - name: Validate lab config template
+        run: npm run lab:check
