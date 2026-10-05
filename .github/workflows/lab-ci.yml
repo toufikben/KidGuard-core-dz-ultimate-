@@ -1,0 +1,39 @@
+name: Lab verification
+
+on:
+  push:
+    branches: ["lab/**"]
+    paths: ["lab/**", ".github/workflows/lab-ci.yml", "package.json"]
+  pull_request:
+    paths: ["lab/**"]
+
+jobs:
+  lab:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Syntax check lab shell scripts
+        run: |
+          find lab -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
+
+      - name: Install shellcheck if absent
+        run: |
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          fi
+
+      - name: Shellcheck lab scripts
+        run: |
+          files=$(find lab -name '*.sh')
+          if [ -n "$files" ]; then shellcheck -S warning $files; fi
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      - name: Run lab tests
+        run: npm run test:lab
