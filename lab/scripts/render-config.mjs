@@ -9,7 +9,7 @@ const REQUIRED = [
 const DEFAULTS = {
   LAB_FORWARD_PORT: '5199',
   LAB_SINK_HOST: '127.0.0.1',
-  LAB_FORWARD_HEADER: 'kidguard-lab',
+  LAB_FORWARD_TOKEN: 'kidguard-lab',
   LAB_LAN_HOST: '',
 };
 
@@ -21,10 +21,22 @@ export function renderConfig(template, env) {
   if (missing.length > 0) {
     throw new Error(`missing env: ${missing.join(', ')}`);
   }
-  const values = { ...DEFAULTS, ...process.env, ...env };
-  return template.replace(
-    /\$\{([A-Z0-9_]+)\}/g,
-    (marker, name) => (values[name] === undefined ? marker : escapeXml(values[name])));
+  // Resolve every placeholder from `env` first, then `DEFAULTS`. A placeholder that is
+  // absent from both — or present in `env` but blank — is an error: silently rendering it
+  // as an empty string produced values like `http://:/alert` that still pass validation.
+  const unresolved = new Set();
+  const rendered = template.replace(/\$\{([A-Z0-9_]+)\}/g, (marker, name) => {
+    const value = Object.prototype.hasOwnProperty.call(env, name) ? env[name] : DEFAULTS[name];
+    if (value === undefined || value === '') {
+      unresolved.add(name);
+      return marker;
+    }
+    return escapeXml(value);
+  });
+  if (unresolved.size > 0) {
+    throw new Error(`missing env: ${[...unresolved].sort().join(', ')}`);
+  }
+  return rendered;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

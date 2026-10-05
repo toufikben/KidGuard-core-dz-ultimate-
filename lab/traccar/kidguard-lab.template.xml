@@ -15,7 +15,7 @@
     <entry key='database.registerUnknown'>false</entry>
 
     <entry key='event.forward.url'>http://${LAB_SINK_HOST}:${LAB_FORWARD_PORT}/alert</entry>
-    <entry key='event.forward.header'>${LAB_FORWARD_HEADER}</entry>
+    <entry key='event.forward.header'>X-Lab-Sign: ${LAB_FORWARD_TOKEN}</entry>
 
     <entry key='notificator.telegram.key'>${LAB_TELEGRAM_BOT_TOKEN}</entry>
     <entry key='notificator.telegram.chatId'>${LAB_TELEGRAM_CHAT_ID}</entry>

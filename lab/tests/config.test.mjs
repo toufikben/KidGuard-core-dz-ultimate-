@@ -53,3 +53,39 @@ test('validation rejects a committed secret-shaped value', () => {
   const { errors } = validateConfig(leaked, { allowPlaceholders: true });
   assert.ok(errors.some((e) => e.includes('placeholder')));
 });
+
+// Fix 1 (BLOCKER): Traccar EventForwarderJson.java does header.split("\\r?\\n") then
+// line.split(":", 2) and dereferences values[1]; a colon-less header line throws
+// ArrayIndexOutOfBoundsException synchronously inside forward().
+test('Fix1: rendered forward header is a colon-separated Name: value pair', () => {
+  const out = renderConfig(template, env);
+  const { entries } = validateConfig(out, { allowPlaceholders: false });
+  const header = entries.get('event.forward.header');
+  assert.ok(header, 'event.forward.header entry must be present');
+  for (const line of header.split(/\r?\n/)) {
+    const idx = line.indexOf(':'); // emulate Java line.split(":", 2): first colon splits, rest stays
+    assert.ok(idx >= 0, `header line "${line}" must contain a colon`);
+    assert.notEqual(line.slice(0, idx).trim(), '', 'header name half must be non-empty');
+    assert.notEqual(line.slice(idx + 1).trim(), '', 'header value half must be non-empty');
+  }
+});
+
+test('Fix1: validateConfig rejects a forward header without a colon', () => {
+  const bad = template.replace(
+    /<entry key='event\.forward\.header'>[^<]*<\/entry>/,
+    "<entry key='event.forward.header'>lab-sign-no-colon</entry>");
+  const { errors } = validateConfig(bad, { allowPlaceholders: true });
+  assert.ok(errors.some((e) => e.includes('event.forward.header')),
+    `colon-less header must fail the event.forward.header rule, got: ${errors.join('\n')}`);
+});
+
+// Fix 2 (IMPORTANT): renderer must fail loudly on ANY unresolved placeholder, not just REQUIRED.
+test('Fix2: render throws on a placeholder present in neither env nor defaults', () => {
+  const t = "<entry key='x'>http://${LAB_NOPE}/alert</entry>";
+  assert.throws(() => renderConfig(t, env), /missing env:/);
+});
+
+test('Fix2: render does not silently emit an empty value for a present-but-blank env var', () => {
+  const badEnv = { ...env, LAB_SINK_HOST: '' };
+  assert.throws(() => renderConfig(template, badEnv), /missing env:/);
+});

@@ -12,8 +12,21 @@ const RULES = {
   'database.registerUnknown': (v) => v === 'false' || 'whitelist required (spec 9.6)',
   'event.forward.url': (v) => /^http:\/\/(127\.0\.0\.1|\$\{LAB_SINK_HOST\}|localhost):\$\{LAB_FORWARD_PORT\}\/alert$|^http:\/\/(127\.0\.0\.1|localhost|\d{1,3}(\.\d{1,3}){3}):\d+\/alert$/.test(v)
     || 'must POST to the lab sink on http://<host>:<port>/alert',
-  'event.forward.header': (v) => v === '${LAB_FORWARD_HEADER}' || (!/[<>&]/.test(v) && v.length > 0)
-    || 'must be the ${LAB_FORWARD_HEADER} placeholder or a plain header value',
+  'event.forward.header': (v) => {
+    // Traccar EventForwarderJson.java: line.split(":", 2) then values[1].trim(); a value
+    // without a colon throws ArrayIndexOutOfBoundsException inside forward(). The header
+    // must therefore be a "Name: value" pair with both halves non-empty. In template
+    // (placeholder) mode the value half may be a ${VAR}; a bare ${VAR} with no "Name:"
+    // prefix is rejected.
+    if (/[<>&]/.test(v)) return 'header must not contain XML metacharacters';
+    const idx = v.indexOf(':');
+    if (idx === -1) return 'must be a "Name: value" pair; a colon-less header crashes Traccar EventForwarderJson';
+    const name = v.slice(0, idx).trim();
+    const value = v.slice(idx + 1).trim();
+    if (name === '') return 'header name (left of the colon) must not be empty';
+    if (value === '') return 'header value (right of the colon) must not be empty';
+    return true;
+  },
   'logger.console': (v) => v === 'true' || 'lab must log to console',
   'notificator.telegram.key': (v) => v === '${LAB_TELEGRAM_BOT_TOKEN}' || /^\d+:[\w-]+$/.test(v)
     || 'must be the placeholder or a bot token',
