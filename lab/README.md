@@ -4,14 +4,16 @@
 
 ## يثبته
 استقبال إحداثيات، تقييم منطقة على الخادم، حدث geofenceExit، تمرير event.forward.url،
-وصول Telegram/بريد لكل الأولياء، أزمنة p50/p95، وسِمات أمان المعمل.
+تفرّع الحدث (fan-out) إلى كل الأولياء المسجّلين وصولاً إلى مستقبل المعمل،
+أزمنة الوصول إلى الحوض/المستقبل المحلي (p50/p95)، وسِمات أمان المعمل.
 
 ## لا يثبته (يُمنع ادّعاؤه قبل VPS)
 استمرارية 24/7، وصول من شبكة الجوال عبر NAT، وضع SMS الحقيقي، زمن تسليم على الإنترنت العام،
 عمر بطارية جهاز. الأنفاق المجانية لا تنقل TCP خام لمنافذ الأجهزة — راجع
-docs/superpowers/specs (المادة 10) وresearch/hosting-algeria.md.
+docs/superpowers/specs/2026-10-05-parent-side-tracing-design.md (المادة 10).
 
 ## تشغيل
+(هذه الأوامر تصبح قابلة للتنفيذ اعتباراً من المهمة 2؛ في HEAD الحالي ملفات lab/scripts وlab/sink غير موجودة.)
 npm run lab:render && npm run lab:check     # يولّد kidguard-lab.xml ويتحقق منه
 bash lab/traccar/run.sh                      # نافذة واحدة تبقى مفتوحة
 npm run lab:bootstrap                        # نافذة ثانية
