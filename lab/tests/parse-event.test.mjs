@@ -41,7 +41,13 @@ test('tolerates missing position (deviceOffline has none)', () => {
   const record = parseEventData(offline, Date.parse('2026-10-05T10:05:00.000Z'));
   assert.equal(record.latitude, null);
   assert.equal(record.ingestLatencyMs, null);
-  assert.ok(record.forwardLatencyMs >= 0);
+  // Forward latency is a REAL measurement here, not "whatever the range check happens
+  // to accept". `record.forwardLatencyMs >= 0` was defective: null >= 0 is truthy in JS,
+  // so it passed even when the measurement was missing. The offline fixture pins it:
+  // receivedAt 10:05:00.000Z - eventTime 10:00:00.000Z = 300000 ms exactly.
+  assert.ok(Number.isFinite(record.forwardLatencyMs),
+    'forward latency must be a finite number, never a missing (null) measurement');
+  assert.equal(record.forwardLatencyMs, 300_000);
 });
 
 test('accepts epoch millis as well as ISO timestamps', () => {

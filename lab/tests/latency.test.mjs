@@ -31,3 +31,27 @@ test('markdown verdict flags a p95 above the 30s budget', async () => {
   const slow = fixture.map((r) => ({ ...r, forwardLatencyMs: 31_000 }));
   assert.match(toMarkdown(summarize(slow, ['geofenceExit'])), /FAIL p95/);
 });
+
+test('markdown verdict pins all three states: PASS, FAIL, and NO DATA', async () => {
+  const { toMarkdown } = await import('../sink/report.mjs');
+  const empty = summarize([], ['geofenceExit']);
+  const slow = fixture.map((r) => ({ ...r, forwardLatencyMs: 31_000 }));
+  // A record present but whose forward latency was never a finite measurement
+  // (e.g. every event arrived with a missing/NaN timing) yields a null p95.
+  const unmeasured = summarize(
+    [{ eventType: 'geofenceExit', forwardLatencyMs: null, ingestLatencyMs: null, latitude: 1 }],
+    ['geofenceExit']);
+
+  // PASS: a real finite p95 within the 30s budget.
+  assert.match(toMarkdown(summarize(fixture, ['geofenceExit'])), /verdict: PASS p95 <= 30000 ms/);
+  // FAIL: a real finite p95 above the budget.
+  assert.match(toMarkdown(summarize(slow, ['geofenceExit'])), /verdict: FAIL p95 > 30000 ms/);
+  // NO DATA: empty input must NOT read as "within budget" for a child-safety report.
+  assert.equal(empty.total, 0);
+  assert.match(toMarkdown(empty), /verdict: NO DATA/);
+  assert.doesNotMatch(toMarkdown(empty), /verdict: PASS/);
+  assert.doesNotMatch(toMarkdown(empty), /verdict: FAIL/);
+  // NO DATA: records exist but there is no finite forward p95 at all.
+  assert.match(toMarkdown(unmeasured), /verdict: NO DATA/);
+  assert.doesNotMatch(toMarkdown(unmeasured), /verdict: PASS/);
+});

@@ -41,3 +41,25 @@ test('records a forwarded event and answers 200, rejects junk with 400', async (
   server.close();
   await rm(dir, { recursive: true, force: true });
 });
+
+test('rejects an oversized body with 413 and appends nothing', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'kidguard-lab-sink-413-'));
+  const eventsFile = join(dir, 'events.ndjson');
+  const server = createSink({ eventsFile, log: silent });
+  await new Promise((done) => server.listen(0, '127.0.0.1', done));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  // 2 MiB body, over the sink's MAX_BODY_BYTES cap (1 MiB).
+  const oversized = 'x'.repeat(2 * 1024 * 1024);
+  const res = await fetch(`${base}/alert`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: oversized,
+  });
+  assert.equal(res.status, 413);
+
+  // The guard returns before mkdir/appendFile, so nothing was ever written:
+  // the events file must not exist at all.
+  await assert.rejects(readFile(eventsFile, 'utf8'), { code: 'ENOENT' });
+
+  server.close();
+  await rm(dir, { recursive: true, force: true });
+});

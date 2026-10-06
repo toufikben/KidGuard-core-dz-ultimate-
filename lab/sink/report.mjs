@@ -8,9 +8,20 @@ export function toMarkdown(summary) {
   const rows = Object.entries(summary.byType).map(([type, m]) =>
     `| ${type} | ${m.count} | ${m.forwardP50Ms ?? '-'} | ${m.forwardP95Ms ?? '-'}`
     + ` | ${m.forwardMaxMs ?? '-'} | ${m.ingestP95Ms ?? '-'} | ${m.withoutPosition} |`);
-  const verdict = Object.values(summary.byType).every((m) =>
-    m.forwardP95Ms === null || m.forwardP95Ms <= TARGET_P95_MS)
-    ? `PASS p95 <= ${TARGET_P95_MS} ms` : `FAIL p95 > ${TARGET_P95_MS} ms`;
+  const finiteP95 = Object.values(summary.byType)
+    .map((m) => m.forwardP95Ms)
+    .filter((v) => Number.isFinite(v));
+  let verdict;
+  if (summary.total === 0 || finiteP95.length === 0) {
+    // A child-safety report must never let "no measurement" read as "within budget":
+    // the previous `.every(m => m.forwardP95Ms === null || ...)` returned PASS for empty
+    // input and for a null p95. Require at least one finite forward p95 before PASS/FAIL.
+    verdict = `NO DATA p95 not measured (records: ${summary.total})`;
+  } else if (finiteP95.every((v) => v <= TARGET_P95_MS)) {
+    verdict = `PASS p95 <= ${TARGET_P95_MS} ms`;
+  } else {
+    verdict = `FAIL p95 > ${TARGET_P95_MS} ms`;
+  }
   return [
     `# M0 measurement report`,
     ``,

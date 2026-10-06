@@ -20,8 +20,10 @@ export function createSink({ eventsFile, log = console }) {
       size += chunk.length;
       if (size > MAX_BODY_BYTES) {
         res.writeHead(413, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ error: 'payload too large' }));
-        req.destroy();
+        // Destroy the request only AFTER the 413 has flushed. Calling req.destroy()
+        // synchronously after res.end() tore down the socket before the response could
+        // reach the client, so oversized posts surfaced as ECONNRESET instead of a real 413.
+        res.end(JSON.stringify({ error: 'payload too large' }), () => req.destroy());
         return;
       }
       chunks.push(chunk);
