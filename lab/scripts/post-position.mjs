@@ -6,7 +6,7 @@
 // only reads these names; osmandBody refuses anything else so a typo can't silently drop a field.
 export const OSMAND_PARAM_NAMES = [
   'id', 'deviceid', 'notificationToken', 'valid', 'timestamp', 'lat', 'lon', 'location',
-  'cell', 'wifi', 'speed', 'bearing', 'altitude', 'accuracy', 'hdop', 'batt', 'charge',
+  'cell', 'wifi', 'speed', 'bearing', 'heading', 'altitude', 'accuracy', 'hdop', 'batt', 'charge',
 ];
 
 export function osmandBody(params) {
@@ -44,7 +44,16 @@ export function sendSchedule(readings, speed, t0Sec) {
   });
 }
 
-export async function postPosition({ host = '127.0.0.1', port = 5055, uniqueId, reading, absoluteTimeSec }) {
+export async function postPosition({
+  host = '127.0.0.1', port = 5055, uniqueId, reading, absoluteTimeSec, fetchFn = fetch,
+}) {
+  // Refuse a broken reading before any network call: serialising "undefined" onto the wire
+  // would let the decoder read an invalid (or silently wrong) position instead of failing here.
+  for (const key of ['lat', 'lon', 'accuracy', 'speedKnots']) {
+    if (!Number.isFinite(Number(reading[key]))) {
+      throw new Error(`reading.${key} must be a finite number, got ${JSON.stringify(reading[key])}`);
+    }
+  }
   const body = osmandBody([
     ['id', uniqueId],
     ['valid', 'true'],
@@ -56,7 +65,7 @@ export async function postPosition({ host = '127.0.0.1', port = 5055, uniqueId, 
     ['bearing', reading.course ?? 0],
     ['batt', reading.battery ?? 75],
   ]);
-  const response = await fetch(`http://${host}:${port}/`, {
+  const response = await fetchFn(`http://${host}:${port}/`, {
     method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body,
   });
   await response.text();

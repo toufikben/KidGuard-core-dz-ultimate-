@@ -42,7 +42,11 @@ export function parseEventData(payload, receivedAtMs) {
     fixTimeIso: iso(fixTime),
     serverTimeIso: iso(serverTime),
     receivedAtIso: new Date(receivedAtMs).toISOString(),
+    // Two different quantities, both kept: `forward` is the age of Traccar's reference time
+    // (deviceMoving back-dates eventTime to the motion onset), `transport` is the
+    // source->sink path spec §8 budgets at <=30 s p95.
     forwardLatencyMs: diff(receivedAtMs, eventTime),
+    transportLatencyMs: diff(receivedAtMs, fixTime),
     ingestLatencyMs: diff(serverTime, fixTime),
   };
 }

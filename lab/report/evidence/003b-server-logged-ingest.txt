@@ -1,0 +1,60 @@
+===== 003b: what the Traccar server itself logged during the M0 gate run =====
+Source: lab/logs/traccar-boot.log (git-ignored runtime log of the pinned 6.16.0 jar, pid 8340).
+Why this file exists: it is the server-side half of the gate proof. lab/artifacts/events.ndjson is
+what the SINK recorded; this is what TRACCAR recorded about receiving the positions that produced
+those events. Every line below is verbatim from the servers own log, with only the request body
+cut out of each POST line for readability. Nothing here was written by our scripts.
+
+--- bind lines. Ruling R31: the brief expected the literal tokens "osmand: bound" and
+  "web: http://127.0.0.1:8082"; Traccar 6.16.0 prints no such strings. These are its real
+  equivalents, next to the netstat proof already in 003-scenario-server-boot.txt. ---
+2026-10-06 10:55:17  INFO: Started oejs.ServerConnector@53a16dd6{HTTP/1.1, (http/1.1)}{tempuri.org:8082}
+2026-10-06 10:55:17  INFO: Started oejs.Server@5dfec221{STARTING}[12.1.13,sto=0] @4713ms
+
+counts: osmand POSTs=19  200 OK=16  400 Bad Request=3  "Unknown device" warnings=3
+
+--- every position the server accepted (POST body as decoded), grouped by run ---
+  # school-exit run 1
+    2026-10-06 10:58:22  id=lab-child-1&valid=true&timestamp=1791280699&lat=36.7538&lon=3.0588&accuracy=12&speed=0&bearing=0&batt=75
+    2026-10-06 10:58:49  id=lab-child-1&valid=true&timestamp=1791280729&lat=36.75395&lon=3.0589&accuracy=12&speed=1.2&bearing=45&batt=75
+    2026-10-06 10:59:19  id=lab-child-1&valid=true&timestamp=1791280759&lat=36.7541&lon=3.059&accuracy=15&speed=1.8&bearing=45&batt=75
+    2026-10-06 10:59:49  id=lab-child-1&valid=true&timestamp=1791280789&lat=36.75475&lon=3.05955&accuracy=15&speed=3.4&bearing=45&batt=75
+    2026-10-06 11:00:19  id=lab-child-1&valid=true&timestamp=1791280819&lat=36.75541&lon=3.0601&accuracy=18&speed=3.4&bearing=45&batt=75
+    2026-10-06 11:00:49  id=lab-child-1&valid=true&timestamp=1791280849&lat=36.7561&lon=3.0607&accuracy=18&speed=4&bearing=45&batt=75
+  # route-park
+    2026-10-06 11:04:17  id=lab-child-1&valid=true&timestamp=1791281056&lat=36.75382&lon=3.05882&accuracy=10&speed=1.5&bearing=40&batt=75
+    2026-10-06 11:05:16  id=lab-child-1&valid=true&timestamp=1791281116&lat=36.7552&lon=3.0605&accuracy=10&speed=1.5&bearing=40&batt=75
+    2026-10-06 11:06:16  id=lab-child-1&valid=true&timestamp=1791281176&lat=36.7568&lon=3.0621&accuracy=12&speed=1.6&bearing=40&batt=75
+    2026-10-06 11:07:16  id=lab-child-1&valid=true&timestamp=1791281236&lat=36.759&lon=3.066&accuracy=12&speed=5&bearing=60&batt=75
+  # school-exit re-run (idempotence)
+    2026-10-06 11:14:39  id=lab-child-1&valid=true&timestamp=1791281679&lat=36.7538&lon=3.0588&accuracy=12&speed=0&bearing=0&batt=75
+    2026-10-06 11:15:09  id=lab-child-1&valid=true&timestamp=1791281709&lat=36.75395&lon=3.0589&accuracy=12&speed=1.2&bearing=45&batt=75
+    2026-10-06 11:15:39  id=lab-child-1&valid=true&timestamp=1791281739&lat=36.7541&lon=3.059&accuracy=15&speed=1.8&bearing=45&batt=75
+    2026-10-06 11:16:09  id=lab-child-1&valid=true&timestamp=1791281769&lat=36.75475&lon=3.05955&accuracy=15&speed=3.4&bearing=45&batt=75
+    2026-10-06 11:16:39  id=lab-child-1&valid=true&timestamp=1791281799&lat=36.75541&lon=3.0601&accuracy=18&speed=3.4&bearing=45&batt=75
+    2026-10-06 11:17:09  id=lab-child-1&valid=true&timestamp=1791281829&lat=36.7561&lon=3.0607&accuracy=18&speed=4&bearing=45&batt=75
+
+--- every position the server REJECTED (whitelist proof, registerUnknown=false) ---
+    2026-10-06 11:19:30  POST id=lab-not-registered&valid=true&lat=36.75&lon=3.06&timestamp=1791281970
+    2026-10-06 11:19:30  WARN: Unknown device - lab-not-registered (127.0.0.1)
+    2026-10-06 11:19:30  INFO: [Teb4eae6e: osmand > 127.0.0.1] HTTP/1.1 400 Bad Request\r\ncontent-length: 0\r\n\r\n
+
+    2026-10-06 11:23:09  POST id=lab-not-registered&valid=true&lat=36.75&lon=3.06
+    2026-10-06 11:23:09  WARN: Unknown device - lab-not-registered (10.220.50.85)
+    2026-10-06 11:23:09  INFO: [T8822229a: osmand > 10.220.50.85] HTTP/1.1 400 Bad Request\r\ncontent-length: 0\r\n\r\n
+
+    2026-10-06 11:34:50  POST id=lab-not-registered&valid=true&lat=36.75&lon=3.06
+    2026-10-06 11:34:50  WARN: Unknown device - lab-not-registered (10.220.50.85)
+    2026-10-06 11:34:50  INFO: [T3b4540c7: osmand > 10.220.50.85] HTTP/1.1 400 Bad Request\r\ncontent-length: 0\r\n\r\n
+
+--- how to read this ---
+1. Six accepted POSTs 10:58:22..11:00:49 = school-exit (offsets 0/30/60/90/120/150 s at speed 1);
+   four 11:04:17..11:07:16 = route-park; six 11:14:39..11:17:09 = the idempotence re-run. The
+   coordinates above match lab/scenarios/school-exit.json and route-park.json reading for reading,
+   and the same instants appear as forwards in the sink artifact.
+2. The only 400s are for id=lab-not-registered, each preceded by the servers own "Unknown device"
+   warning, from loopback AND from the LAN address 10.220.50.85. An unregistered uniqueId cannot
+   inject a position: the spec 9.4 whitelist measured server-side, not just asserted by our check
+   script.
+3. 8082 is bound to 127.0.0.1 only; 5055 is bound to 0.0.0.0 because a phone on the LAN has to reach
+   it. Ledger-flagged for pre-production: a public deployment must not publish the ingest port bare.

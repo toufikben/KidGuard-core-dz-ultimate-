@@ -193,9 +193,9 @@ test('osmand body uses the parameter names the decoder accepts', async () => {
     assert.ok(body.includes(`${name}=`), name);
   }
   assert.deepEqual(
-    OSMAND_PARAM_NAMES.slice(0, 14),
+    OSMAND_PARAM_NAMES.slice(0, 15),
     ['id', 'deviceid', 'notificationToken', 'valid', 'timestamp', 'lat', 'lon', 'location',
-     'cell', 'wifi', 'speed', 'bearing', 'altitude', 'accuracy']);
+     'cell', 'wifi', 'speed', 'bearing', 'heading', 'altitude', 'accuracy']);
   assert.equal(new URLSearchParams(body).get('speed'), '3.4');
 });
 
@@ -280,4 +280,81 @@ test('the brief relative-sleep shape would stamp positions in the future (the ne
   // The SAME predicate over the corrected schedule finds no future stamp — this is what gives the
   // invariant test teeth: were sendSchedule to reuse the declared-offset stamp, it would fail too.
   assert.ok(!sendSchedule(readings, speed, t0).some(hasFutureStamp));
+});
+
+// Reviewer finding (Task 6, round 1): the guard against future stamps lives in the live loop,
+// not only in the pure schedule. This pins that loop with an injected clock and an injected
+// poster — no network, no server.
+test('replayScenario awaits each deadline before posting, so no live post is stamped ahead of itself', async () => {
+  const { replayScenario } = await import('../scripts/scenario.mjs');
+  const scenario = {
+    name: 'fake', expectEvent: 'geofenceExit',
+    readings: [
+      { offsetSec: 0, lat: 36.7538, lon: 3.0588, accuracy: 12, speedKnots: 0 },
+      { offsetSec: 30, lat: 36.75395, lon: 3.0589, accuracy: 12, speedKnots: 1.2 },
+      { offsetSec: 60, lat: 36.7541, lon: 3.059, accuracy: 15, speedKnots: 1.8 },
+    ],
+  };
+  let nowMs = 1_791_446_400_000;
+  const timeline = [];
+  const posted = [];
+  await replayScenario({
+    name: 'fake',
+    speed: 1,
+    env: { LAB_DEVICE_UNIQUE_ID: 'lab-child-9', LAB_OSMAND_HOST: '10.0.0.5', LAB_OSMAND_PORT: '5056' },
+    log: () => {},
+    readFileFn: async () => JSON.stringify(scenario),
+    nowSec: () => Math.floor(nowMs / 1000),
+    nowMs: () => nowMs,
+    wait: async (ms) => { timeline.push(`wait:${ms}`); nowMs += ms; },
+    post: async ({ host, port, uniqueId, reading, absoluteTimeSec }) => {
+      timeline.push(`post:${absoluteTimeSec}`);
+      posted.push({ host, port, uniqueId, offsetSec: reading.offsetSec,
+        absoluteTimeSec, sendSec: Math.floor(nowMs / 1000) });
+    },
+  });
+
+  // The pacing must come from the injected clock: at speed 1 the gaps are exactly 0/30 s/30 s.
+  // A loop that waited on the real Date.now() would ask for 0 ms here (its deadlines are in the
+  // past for an injected clock), which is how a future-stamped position would reach the wire.
+  assert.deepEqual(timeline,
+    ['wait:0', `post:${1_791_446_400}`, 'wait:30000', `post:${1_791_446_430}`,
+     'wait:30000', `post:${1_791_446_460}`],
+    'every reading must be awaited to its deadline, on the injected clock, before it is posted');
+  assert.deepEqual(posted.map((p) => p.absoluteTimeSec),
+    [1_791_446_400, 1_791_446_430, 1_791_446_460]);
+  for (const p of posted) {
+    assert.ok(p.absoluteTimeSec <= p.sendSec,
+      `reading at offset ${p.offsetSec}s was stamped ${p.absoluteTimeSec}, sent at ${p.sendSec}`);
+  }
+  assert.deepEqual(posted.map((p) => [p.host, p.port, p.uniqueId]),
+    [['10.0.0.5', 5056, 'lab-child-9'], ['10.0.0.5', 5056, 'lab-child-9'], ['10.0.0.5', 5056, 'lab-child-9']]);
+});
+
+// A reading with a missing coordinate must fail loudly, not serialise the string "undefined"
+// onto the wire (the decoder would read it as an invalid position, or a wrong one).
+test('postPosition refuses an incomplete reading before it touches the network', async () => {
+  const { postPosition } = await import('../scripts/post-position.mjs');
+  const never = async () => { throw new Error('fetch must not be called'); };
+  const complete = { lat: 36.75541, lon: 3.0601, accuracy: 18, speedKnots: 3.4 };
+  for (const key of ['lat', 'lon', 'accuracy', 'speedKnots']) {
+    const broken = { ...complete };
+    delete broken[key];
+    await assert.rejects(
+      () => postPosition({ uniqueId: 'lab-child-1', reading: broken, absoluteTimeSec: 1, fetchFn: never }),
+      new RegExp(`reading.${key}`), key);
+  }
+  const calls = [];
+  await postPosition({
+    uniqueId: 'lab-child-1', reading: complete, absoluteTimeSec: 1_791_446_400,
+    fetchFn: async (url, init) => { calls.push([url, init.body]); return { ok: true, status: 200, text: async () => '' }; },
+  });
+  assert.equal(calls[0][0], 'http://127.0.0.1:5055/');
+  assert.equal(new URLSearchParams(calls[0][1]).get('lat'), '36.75541');
+});
+
+// The decoder reads bearing OR its alias heading (plan table, OsmAndProtocolDecoder.java:95-172).
+test('osmandBody accepts the heading alias the decoder also reads', async () => {
+  const { osmandBody } = await import('../scripts/post-position.mjs');
+  assert.equal(new URLSearchParams(osmandBody([['id', 'lab-child-1'], ['heading', 45]])).get('heading'), '45');
 });

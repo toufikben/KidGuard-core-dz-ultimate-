@@ -60,3 +60,32 @@ test('accepts epoch millis as well as ISO timestamps', () => {
   assert.equal(record.ingestLatencyMs, 3500);
   assert.equal(record.fixTimeIso, '2026-10-05T09:59:57.000Z');
 });
+
+// R30: spec §8 budgets the «مصدر → خادم» path. The record must carry that transport
+// measurement (sink receipt − fix time) beside the event age (sink receipt − eventTime),
+// because Traccar back-dates deviceMoving's eventTime to the motion onset.
+test('stores source->sink transport latency beside the event age', () => {
+  const record = parseEventData(fixture, Date.parse('2026-10-05T10:00:03.400Z'));
+  assert.equal(record.fixTimeIso, '2026-10-05T09:59:57.000Z');
+  assert.equal(record.transportLatencyMs, 6400);
+  assert.equal(record.forwardLatencyMs, 3400);
+});
+
+test('a positionless event has no transport measurement (nothing was read from the source)', () => {
+  const offline = { ...fixture, position: undefined,
+                    event: { ...fixture.event, type: 'deviceOffline', positionId: 0 } };
+  const record = parseEventData(offline, Date.parse('2026-10-05T10:05:00.000Z'));
+  assert.equal(record.transportLatencyMs, null);
+  assert.equal(record.forwardLatencyMs, 300_000);
+});
+
+test('back-dated deviceMoving: transport stays small while the event age grows by the lag', () => {
+  const onset = Date.parse('2026-10-05T10:00:00.000Z');
+  const moving = { ...fixture,
+    event: { ...fixture.event, type: 'deviceMoving', eventTime: new Date(onset - 60_000).toISOString() },
+    position: { ...fixture.position, fixTime: new Date(onset - 3_000).toISOString(),
+                serverTime: new Date(onset + 500).toISOString() } };
+  const record = parseEventData(moving, onset + 1_000);
+  assert.equal(record.transportLatencyMs, 4_000);
+  assert.equal(record.forwardLatencyMs, 61_000);
+});

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { percentile, summarize } from '../sink/lib/latency.mjs';
+import { percentile, summarize, transportLatency } from '../sink/lib/latency.mjs';
 
 test('percentile uses nearest-rank', () => {
   const sorted = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000];
@@ -24,52 +24,97 @@ test('summarize counts every type and reports the one that never arrived', () =>
   assert.deepEqual(summary.coverage.unexpected.sort(), ['deviceMoving', 'deviceOffline']);
 });
 
+// R30: spec §8 budgets «مصدر → خادم» — the transport path. Rows written before the stored
+// field existed (the committed M0 evidence among them) are re-derived from their ISO stamps,
+// so the gate report re-renders without re-running the lab.
+test('transportLatency prefers the stored measurement, else derives it from the stamps', () => {
+  assert.equal(transportLatency({ transportLatencyMs: 1234,
+    receivedAtIso: '2026-10-05T10:00:09.000Z', fixTimeIso: '2026-10-05T10:00:00.000Z' }), 1234);
+  assert.equal(transportLatency({ transportLatencyMs: null,
+    receivedAtIso: '2026-10-05T10:00:03.400Z', fixTimeIso: '2026-10-05T10:00:00.000Z' }), 3400);
+  assert.equal(transportLatency({}), null);
+  assert.equal(transportLatency({ receivedAtIso: '2026-10-05T10:00:03.400Z' }), null);
+  assert.equal(transportLatency({ receivedAtIso: 'not a date',
+    fixTimeIso: '2026-10-05T10:00:00.000Z' }), null);
+});
+
+test('summarize keeps the source->sink budget percentiles beside the event age', () => {
+  const summary = summarize(fixture, ['geofenceExit']);
+  assert.equal(summary.byType.geofenceExit.transportP95Ms, 4200);
+  assert.equal(summary.byType.deviceMoving.transportP95Ms, 700);
+  // The fixture's last deviceMoving row mimics the live gate: Traccar back-dates its
+  // eventTime to the motion onset, so the age inflates while the transport does not.
+  assert.equal(summary.byType.deviceMoving.forwardP95Ms, 60_700);
+});
+
 test('markdown verdict flags a p95 above the 30s budget', async () => {
   const { toMarkdown } = await import('../sink/report.mjs');
   const md = toMarkdown(summarize(fixture, ['geofenceExit']));
   assert.match(md, /PASS p95/);
-  const slow = fixture.map((r) => ({ ...r, forwardLatencyMs: 31_000 }));
+  const slow = fixture.map((r) => ({ ...r, transportLatencyMs: 31_000 }));
   assert.match(toMarkdown(summarize(slow, ['geofenceExit'])), /FAIL p95/);
 });
 
 test('markdown verdict pins all three states: PASS, FAIL, and NO DATA', async () => {
   const { toMarkdown } = await import('../sink/report.mjs');
   const empty = summarize([], ['geofenceExit']);
-  const slow = fixture.map((r) => ({ ...r, forwardLatencyMs: 31_000 }));
-  // A record present but whose forward latency was never a finite measurement
-  // (e.g. every event arrived with a missing/NaN timing) yields a null p95.
+  const slow = fixture.map((r) => ({ ...r, transportLatencyMs: 31_000 }));
+  // A record present but whose transport latency was never a finite measurement
+  // (e.g. every event arrived with no fix time) yields a null p95.
   const unmeasured = summarize(
-    [{ eventType: 'geofenceExit', forwardLatencyMs: null, ingestLatencyMs: null, latitude: 1 }],
+    [{ eventType: 'geofenceExit', transportLatencyMs: null, forwardLatencyMs: null,
+       ingestLatencyMs: null, latitude: 1 }],
     ['geofenceExit']);
 
   // PASS: a real finite p95 within the 30s budget.
-  assert.match(toMarkdown(summarize(fixture, ['geofenceExit'])), /verdict: PASS p95 <= 30000 ms/);
+  assert.match(toMarkdown(summarize(fixture, ['geofenceExit'])),
+    /verdict: PASS p95 <= 30000 ms \(source->sink\)/);
   // FAIL: a real finite p95 above the budget.
-  assert.match(toMarkdown(summarize(slow, ['geofenceExit'])), /verdict: FAIL p95 > 30000 ms/);
+  assert.match(toMarkdown(summarize(slow, ['geofenceExit'])),
+    /verdict: FAIL p95 > 30000 ms \(source->sink\)/);
   // NO DATA: empty input must NOT read as "within budget" for a child-safety report.
   assert.equal(empty.total, 0);
   assert.match(toMarkdown(empty), /verdict: NO DATA/);
   assert.doesNotMatch(toMarkdown(empty), /verdict: PASS/);
   assert.doesNotMatch(toMarkdown(empty), /verdict: FAIL/);
-  // NO DATA: records exist but there is no finite forward p95 at all.
+  // NO DATA: records exist but there is no finite transport p95 at all.
   assert.match(toMarkdown(unmeasured), /verdict: NO DATA/);
   assert.doesNotMatch(toMarkdown(unmeasured), /verdict: PASS/);
 });
 
-// R19: a clock-skewed forward latency is a bogus measurement, not a fast one.
-// The report must refuse both PASS and FAIL-p95 while any exist.
-const skewed = (forwardLatencyMs) => ({
-  eventType: 'geofenceExit', forwardLatencyMs, ingestLatencyMs: 1_200, latitude: 36.7538,
+// A type that cannot contribute a transport measurement must be named, never folded into a
+// PASS: an event with no position has no source reading to time from.
+test('the report names the types the budget was never measured for', async () => {
+  const { toMarkdown } = await import('../sink/report.mjs');
+  const md = toMarkdown(summarize(fixture, ['geofenceExit']));
+  assert.match(md, /budget not measured for: deviceOffline/);
 });
 
-test('summarize exposes a clock-skew anomaly class for non-positive forward latencies', () => {
-  const summary = summarize(
-    [skewed(-5_000), skewed(0), skewed(1_200), skewed(-1)], ['geofenceExit']);
+// R30 with R19 kept whole: the inflated age stays visible and explained, unclamped.
+test('an event age above the budget is shown and explained, not read as transport', async () => {
+  const { toMarkdown } = await import('../sink/report.mjs');
+  const md = toMarkdown(summarize(fixture, ['geofenceExit']));
+  assert.match(md, /verdict: PASS p95 <= 30000 ms \(source->sink\)/);
+  assert.match(md, /60700/, 'the back-dated age must stay visible in the table');
+  assert.match(md, /event-age note: deviceMoving p95 60700 ms/);
+  assert.match(md, /motion onset/);
+});
+
+// R19, re-pointed at the metric that gates: the source clock feeds the transport measurement,
+// so a non-positive source->sink latency is the impossible reading. Ruling R30 keeps the event
+// age out of this check because Traccar legitimately back-dates it (see the note above).
+const skewed = (transportLatencyMs) => ({
+  eventType: 'geofenceExit', transportLatencyMs, forwardLatencyMs: 60_000,
+  ingestLatencyMs: 1_200, latitude: 36.7538,
+});
+
+test('summarize exposes a clock-skew anomaly class for non-positive transport latencies', () => {
+  const summary = summarize([skewed(-5_000), skewed(0), skewed(1_200), skewed(-1)], ['geofenceExit']);
   assert.equal(summary.clockSkew.count, 3);
-  assert.equal(summary.clockSkew.minForwardLatencyMs, -5_000);
+  assert.equal(summary.clockSkew.minTransportLatencyMs, -5_000);
   const clean = summarize([skewed(1_200)], ['geofenceExit']);
   assert.equal(clean.clockSkew.count, 0);
-  assert.equal(clean.clockSkew.minForwardLatencyMs, null);
+  assert.equal(clean.clockSkew.minTransportLatencyMs, null);
 });
 
 test('report refuses PASS while any record is clock-skewed', async () => {
@@ -77,10 +122,10 @@ test('report refuses PASS while any record is clock-skewed', async () => {
   const md = toMarkdown(summarize([skewed(-5_000), skewed(1_200)], ['geofenceExit']));
   assert.match(md, /verdict: INVALID clock skew/);
   assert.doesNotMatch(md, /verdict: PASS/);
-  assert.match(md, /min forward latency -5000 ms/);
+  assert.match(md, /min source->sink latency -5000 ms/);
 });
 
-test('a forward latency of exactly zero is not a trustworthy measurement', async () => {
+test('a transport latency of exactly zero is not a trustworthy measurement', async () => {
   const { toMarkdown } = await import('../sink/report.mjs');
   const md = toMarkdown(summarize([skewed(0), skewed(1_500)], ['geofenceExit']));
   assert.doesNotMatch(md, /verdict: PASS/);
@@ -104,6 +149,21 @@ test('report CLI accepts a repo-relative events file', async () => {
   const out = execFileSync(process.execPath,
     ['lab/sink/report.mjs', 'lab/fixtures/events.ndjson', 'geofenceExit'],
     { cwd: repoRoot, encoding: 'utf8' });
-  assert.match(out, /verdict: PASS p95 <= 30000 ms/);
-  assert.match(out, /clock-skewed records \(forward latency <= 0\): 0/);
+  assert.match(out, /verdict: PASS p95 <= 30000 ms \(source->sink\)/);
+  assert.match(out, /clock-skewed records \(source->sink latency <= 0\): 0/);
+});
+
+// The committed gate file predates transportLatencyMs; the report must re-render it from the
+// stored stamps rather than declare the gate unmeasurable.
+test('report CLI re-renders the committed M0 evidence and it is within budget', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
+  const out = execFileSync(process.execPath,
+    ['lab/sink/report.mjs', 'lab/artifacts/events.ndjson', 'geofenceExit,deviceMoving'],
+    { cwd: repoRoot, encoding: 'utf8' });
+  assert.match(out, /geofenceExit \| 4/);
+  assert.match(out, /verdict: PASS p95 <= 30000 ms \(source->sink\)/);
+  assert.match(out, /clock-skewed records \(source->sink latency <= 0\): 0/);
+  assert.match(out, /event-age note: deviceMoving p95 63181 ms/);
 });

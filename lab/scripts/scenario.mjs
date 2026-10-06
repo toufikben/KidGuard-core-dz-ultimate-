@@ -20,6 +20,7 @@ export async function replayScenario({
   wait = (ms) => new Promise((done) => setTimeout(done, ms)),
   post = postPosition,
   nowSec = () => Math.floor(Date.now() / 1000),
+  nowMs = Date.now,
 }) {
   const scenario = JSON.parse(await readFileFn(
     new URL(`../scenarios/${String(name).replace(/\.json$/, '')}.json`, import.meta.url), 'utf8'));
@@ -35,9 +36,10 @@ export async function replayScenario({
   for (let i = 0; i < scenario.readings.length; i += 1) {
     const reading = scenario.readings[i];
     const { timestampSec, deadlineMs } = schedule[i];
-    // Await the deadline FIRST, then post: the send second is >= deadlineMs, and timestampSec is
-    // floor(deadlineMs/1000), so the stamp never exceeds the second the position is actually sent.
-    await wait(Math.max(0, deadlineMs - Date.now()));
+    // Await the deadline FIRST (on the injected clock, so tests can prove the pacing), then post:
+    // the send second is >= deadlineMs, and timestampSec is floor(deadlineMs/1000), so the stamp
+    // never exceeds the second the position is actually sent.
+    await wait(Math.max(0, deadlineMs - nowMs()));
     await post({ host, port, uniqueId, reading, absoluteTimeSec: timestampSec });
     log(`  t+${reading.offsetSec}s -> ${reading.lat}, ${reading.lon} (stamped ${timestampSec})`);
   }
