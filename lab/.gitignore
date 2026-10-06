@@ -2,3 +2,5 @@ traccar/kidguard-lab.xml
 artifacts/
 lab-data/
 traccar/server-*.log
+traccar/traccar-other-*/
+traccar/*.zip
