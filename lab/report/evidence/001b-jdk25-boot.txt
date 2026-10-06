@@ -297,3 +297,7 @@ Liquibase: Update has been successful. Rows affected: 1
 /usr/bin/bash: line 1:  2048 Killed                     timeout --signal=TERM --kill-after=10 240 bash lab/traccar/run.sh 2>&1
 # exit=137 (124 = reached the 240s timeout while still running)
 # ended: 2026-10-06T07:45:05Z
+# while the process was still up: curl -sS http://127.0.0.1:8082/api/server -> HTTP 200, body verbatim:
+# {"id":1,"attributes":{},"registration":false,"readonly":false,"deviceReadonly":false,"map":null,"bingKey":null,"mapUrl":null,"overlayUrl":null,"latitude":0.0,"longitude":0.0,"zoom":0,"forceSettings":false,"coordinateFormat":null,"limitCommands":false,"disableReports":false,"fixedEmail":false,"poiLayer":null,"announcement":null,"emailEnabled":true,"geocoderEnabled":true,"textEnabled":false,"storageSpace":null,"newServer":true,"openIdEnabled":false,"openIdForce":false,"version":"6.16.0"}
+# lines matching SEVERE|ERROR|Exception|Caused by in the log above: 0
+# verdict: JDK 25.0.2 loads and runs the Java-21-target jar (no UnsupportedClassVersionError). The 240s timeout killed it while healthy, so uptime beyond 4 minutes is NOT measured here.
