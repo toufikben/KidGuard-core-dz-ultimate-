@@ -358,3 +358,27 @@ test('osmandBody accepts the heading alias the decoder also reads', async () => 
   const { osmandBody } = await import('../scripts/post-position.mjs');
   assert.equal(new URLSearchParams(osmandBody([['id', 'lab-child-1'], ['heading', 45]])).get('heading'), '45');
 });
+
+// Measured in lab/report/evidence/005-fanout.md §4: a notification record whose `notificators`
+// names a channel the server cannot resolve throws inside NotificationManager.updateEvents
+// ("Failed to get notificator telegram"), so the event produces ZERO deliveries — not even for the
+// admin. Traccar 6.16.0 only resolves ids listed in `notificator.types` (default web,mail,command),
+// and `email` is not an id at all in this version (the mail notifier registers as `mail`).
+// The lab therefore pins both sides of the invariant: which channels exist, and which one it asks for.
+test('every notificator the lab provisions is one the server is configured to resolve', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { LAB_NOTIFICATORS } = await import('../scripts/bootstrap.mjs');
+  const template = await readFile(
+    new URL('../traccar/kidguard-lab.template.xml', import.meta.url), 'utf8');
+  const entry = template.match(/<entry key='notificator\.types'>([^<]*)<\/entry>/);
+  assert.ok(entry,
+    'the template must pin notificator.types — unpinned, only the server defaults resolve and '
+    + 'a channel the lab provisions aborts every notification');
+  const types = entry[1].split(',').map((t) => t.trim());
+  for (const id of LAB_NOTIFICATORS.split(',').map((t) => t.trim())) {
+    assert.ok(types.includes(id),
+      `provisioned notificator "${id}" is not resolvable (notificator.types = ${types.join(',')})`);
+  }
+  assert.ok(!/\bemail\b/.test(LAB_NOTIFICATORS),
+    'Traccar 6.16.0 has no "email" notificator id; the mail notifier registers as "mail"');
+});

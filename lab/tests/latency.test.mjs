@@ -153,14 +153,16 @@ test('report CLI accepts a repo-relative events file', async () => {
   assert.match(out, /clock-skewed records \(source->sink latency <= 0\): 0/);
 });
 
-// The committed gate file predates transportLatencyMs; the report must re-render it from the
-// stored stamps rather than declare the gate unmeasurable.
-test('report CLI re-renders the committed M0 evidence and it is within budget', async () => {
+// The gate run wrote lab/artifacts/events.ndjson, which lab/.gitignore excludes (runtime state is
+// never committed). That made the M0 proof machine-local and this test unrunnable in CI, so the
+// gate file is pinned as a tracked fixture. It predates transportLatencyMs, so the report must
+// re-render it from the stored stamps rather than declare the gate unmeasurable.
+test('report CLI re-renders the pinned M0 gate evidence and it is within budget', async () => {
   const { execFileSync } = await import('node:child_process');
   const { fileURLToPath } = await import('node:url');
   const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
   const out = execFileSync(process.execPath,
-    ['lab/sink/report.mjs', 'lab/artifacts/events.ndjson', 'geofenceExit,deviceMoving'],
+    ['lab/sink/report.mjs', 'lab/fixtures/gate-events.ndjson', 'geofenceExit,deviceMoving'],
     { cwd: repoRoot, encoding: 'utf8' });
   assert.match(out, /geofenceExit \| 4/);
   assert.match(out, /verdict: PASS p95 <= 30000 ms \(source->sink\)/);

@@ -6,6 +6,12 @@ import {
   buildNotificationPayload, buildPermissionPayload,
 } from './api.mjs';
 
+// The only channel id this lab provisions, and it must be one the server resolves — see the
+// invariant test in lab/tests/api.test.mjs and evidence 005-fanout.md §4. `email` is not an id in
+// Traccar 6.16.0 (the mail notifier registers as `mail`), and `telegram` is excluded on purpose so
+// no lab run can reach api.telegram.org.
+export const LAB_NOTIFICATORS = 'mail';
+
 // GET /permissions?ownerKey=id&propertyKey=0 => array of {OWNERKEY: v, PROPERTYKEY: v} (uppercase live).
 // 0 على الطرف الثاني يعني «بلا ترشيح» (DatabaseStorage.java:192-198)، فنفلتر في JS بدل كثرة الاستعلامات.
 async function hasLink(client, ownerKey, ownerId, propertyKey, propertyId) {
@@ -166,7 +172,7 @@ export async function runSteps(client, env, results = []) {
     const existing = notifications.find((n) => n.type === 'geofenceExit' && n.description === 'lab-geofenceExit');
     if (existing) return { exists: true, detail: `id=${existing.id} exists` };
     const created = await client.post('/notifications', buildNotificationPayload({
-      type: 'geofenceExit', notificators: 'telegram,email', description: 'lab-geofenceExit' }));
+      type: 'geofenceExit', notificators: LAB_NOTIFICATORS, description: 'lab-geofenceExit' }));
     return `id=${created.id} (owner ${adminId} is linked automatically by BaseObjectResource:91-96)`;
   });
 

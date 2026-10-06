@@ -17,11 +17,18 @@
     <entry key='event.forward.url'>http://${LAB_SINK_HOST}:${LAB_FORWARD_PORT}/alert</entry>
     <entry key='event.forward.header'>X-Lab-Sign: ${LAB_FORWARD_TOKEN}</entry>
 
+    <!-- Measured (evidence 005 §4): a notification naming a channel outside this list throws in
+         NotificationManager.updateEvents and the event delivers to NOBODY. Telegram is deliberately
+         absent so the lab can never open a socket to api.telegram.org with a lab token. -->
+    <entry key='notificator.types'>web,mail</entry>
     <entry key='notificator.telegram.key'>${LAB_TELEGRAM_BOT_TOKEN}</entry>
     <entry key='notificator.telegram.chatId'>${LAB_TELEGRAM_CHAT_ID}</entry>
     <entry key='notificator.telegram.sendLocation'>true</entry>
 
     <entry key='mail.smtp.host'></entry>
+    <!-- true => Traccar swaps SmtpMailManager for LogMailManager: one INFO line per recipient and
+         no SMTP socket, so fan-out is observable with no real mail account (evidence 005 §3). -->
+    <entry key='mail.debug'>true</entry>
 
     <entry key='logger.console'>true</entry>
     <entry key='logger.fullStackTraces'>true</entry>
