@@ -546,8 +546,9 @@ $ node --test "lab/tests/*.test.mjs"
 notificator.types…»، ثم رُجِّع القالب وتَحقَّق السطر 23 منه: `<entry key='notificator.types'>web,mail</entry>`،
 وأعاد `npm run lab:check` قوله: `config ok: …\kidguard-lab.template.xml`.
 
-**CI هذه الجولة: NOT RUN — CI unavailable (account billing)** — لا دفعة GitHub مُشغَّلة؛ كل أرقام
-الاختبارات أعلاه محلية من هذا الجهاز (R14).
+**CI هذه الجولة: NOT RUN — CI unavailable (account billing)** — الدفعتان `37545499282` و`37545971137`
+على `lab/m0` سقطتا في ~3ث بلا أي خطوة (`steps: []`) كما في R14؛ كل أرقام الاختبارات أعلاه محلية من
+هذا الجهاز.
 
 الإيقاف والتحقّق — مرة بعد قياس §5–§8 ومرة بعد قياس §6b؛ النصّ الحرفي للإيقاف الأخير:
 
