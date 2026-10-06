@@ -58,6 +58,7 @@
 | **كل** أشكال WKT في Traccar بترتيب `lat lon` (عكس WKT القياسي): `CIRCLE(lat lon, r)`، و`LINESTRING(lat lon, lat lon)` | `geofence/GeofenceCircle.java:60-69`، `GeofencePolygon.java:134-149`، `GeofencePolyline.java:62-71,79-88` |
 | منطقة مسار = `LINESTRING` + سمة `polylineDistance` (متر، افتراضي 25) | `model/Geofence.java:81-86` |
 | ترميز whitelist = `database.registerUnknown` (اتركه `false`)، وكشف بروتوكول جهاز محتار = `database.saveOriginal` + منفذ 5001 | `Keys.java:613,627` |
+| **`lab-data/database.trace.db` ليس دليلاً على الفشل**: أول إقلاع نظيف كتب فيه `JdbcSQLSyntaxErrorException: Table "DATABASECHANGELOGLOCK" not found` (مرتين) وهذا استطلاع Liquibase الطبيعي قبل إنشاء جدول القفل، بينما سجل `stdout` كان **صفر** سطر يطابق `SEVERE|ERROR|Exception`. المعيار في Task 6 هو سجل الإقلاع لا ملف trace | قياس 2026-10-06، `lab/report/evidence/001b-jdk25-boot.txt` + `lab/traccar/lab-data/database.trace.db` |
 | `/api/socket?token=` موجود ويصادق بالرمز | `web/WebModule.java:27`، `api/AsyncSocketServlet.java:62-66` |
 | `osmand.minAccuracy` افتراضيه 10.0 | `Keys.java:327-330` |
 
