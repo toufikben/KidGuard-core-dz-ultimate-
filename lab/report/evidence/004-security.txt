@@ -1,0 +1,42 @@
+# Task 6 evidence 004 — security checks + bind-address measurement (evaluated against THIS provisioned instance)
+# generated: 2026-10-06. This is the run Task 7's controller ruling moved here so the checks are scored on
+# the SAME live server that produced the geofenceExit gate (web 127.0.0.1:8082, osmand ingest :5055).
+
+===== npm run lab:security =====
+PASS  unauthenticated-devices-401  [GET /devices anonymous -> HTTP 401 (refused before any data)]
+PASS  self-registration-closed  [POST /users HTTP 400 "java.lang.SecurityException: Registration disabled\r\n\tat org.traccar.api.resource"; server.registration=false]
+PASS  unknown-device-rejected  [unknown uniqueId POST / -> HTTP 400 (expected >= 400: unregistered devices are not created)]
+PASS  web-ui-on-localhost-only  [configured API host is 127.0.0.1; this proves only that the lab is pointed at loopback, NOT that Traccar refuses LAN clients (verify web.address=127.0.0.1 from another host; use adb reverse for the phone)]
+4/4 security checks passed
+
+## Check-by-check honesty note:
+#  - unauthenticated-devices-401: anonymous GET /devices refused with 401 BEFORE any data -> real.
+#  - self-registration-closed: probe POST /users returned HTTP 400 'java.lang.SecurityException: Registration
+#    disabled' AND server.registration=false -> Traccar actively refuses anonymous account creation, not just a flag.
+#  - unknown-device-rejected: osmand POST / with id=lab-not-registered -> HTTP 400 -> whitelist ingest (registerUnknown=false).
+#  - web-ui-on-localhost-only: this check only reads LAB_API_URL's host (127.0.0.1). It proves the LAB POINTS AT
+#    LOOPBACK, NOT that Traccar refuses LAN clients. Its own observed[] text states that caveat verbatim.
+
+===== bind-address question — MEASURED non-destructively from the machine's own LAN interface IP (10.220.50.85) =====
+# netstat listeners (server pid 8340):
+  TCP    0.0.0.0:5055           0.0.0.0:0              LISTENING       8340
+  TCP    127.0.0.1:8082         0.0.0.0:0              LISTENING       8340
+  TCP    [::]:5055              [::]:0                 LISTENING       8340
+
+# probe admin/API :8082 from the LAN IP (10.220.50.85) — expect NO listener on that interface:
+  http_code=000  curl_exit=7 (7 = connection could not be established -> refused)
+# probe osmand ingest :5055 from the LAN IP (10.220.50.85) — expect the socket to ACCEPT then reject the unknown id:
+  http_code=400  curl_exit=0
+# loopback control :8082 via 127.0.0.1 — expect it to work:
+  http_code=200
+
+## What was MEASURED (this host):
+#  - web.address=127.0.0.1 is EFFECTIVE on this machine: netstat binds :8082 to 127.0.0.1 only, and connecting
+#    to the machine's LAN IP 10.220.50.85:8082 is REFUSED (curl exit 7), while 127.0.0.1:8082 answers 200.
+#  - the osmand INGEST port :5055 is deliberately reachable on 0.0.0.0 — it ACCEPTS a LAN connection then
+#    rejects the unregistered uniqueId with 400. This is required: a phone on the LAN must be able to POST
+#    positions (Task 8). Admin UI is closed to the LAN; device ingest is intentionally open to it.
+## What was NOT RUN / still UNVERIFIED:
+#  - a TRUE cross-host test (a second physical machine on the LAN probing this box). This box is the lab: no
+#    Docker, no CI, no second server, Actions disabled. Probing from the host's own LAN IP is strong but
+#    same-host evidence, NOT a substitute for a separate-host confirmation. Label: NOT RUN (needs a 2nd host).

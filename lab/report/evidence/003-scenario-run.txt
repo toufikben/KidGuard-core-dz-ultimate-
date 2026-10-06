@@ -1,0 +1,75 @@
+# Task 6 evidence 003b — scenario replay -> events.ndjson -> latency report (M0 gate)
+# generated: 2026-10-06. Positions POSTed to Traccar the way a device does: application/x-www-form-urlencoded
+# osmand body to http://127.0.0.1:5055/ with id=lab-child-1 (device registered by bootstrap; registerUnknown=false).
+
+===== scenario run 1: npm run lab:scenario -- school-exit --speed=1  (circle zone 'school') =====
+scenario school-exit: 6 readings, speed=1, device lab-child-1, expect geofenceExit
+  t+0s -> 36.7538, 3.0588 (stamped 1791280699)
+  t+30s -> 36.75395, 3.0589 (stamped 1791280729)
+  t+60s -> 36.7541, 3.059 (stamped 1791280759)
+  t+90s -> 36.75475, 3.05955 (stamped 1791280789)
+  t+120s -> 36.75541, 3.0601 (stamped 1791280819)
+  t+150s -> 36.7561, 3.0607 (stamped 1791280849)
+sent. Now read lab/artifacts/events.ndjson and run npm run lab:report
+
+===== scenario run 2: npm run lab:scenario -- route-park --speed=1  (LINESTRING zone 'walk-to-park') =====
+scenario route-park: 4 readings, speed=1, device lab-child-1, expect geofenceExit
+  t+0s -> 36.75382, 3.05882 (stamped 1791281056)
+  t+60s -> 36.7552, 3.0605 (stamped 1791281116)
+  t+120s -> 36.7568, 3.0621 (stamped 1791281176)
+  t+180s -> 36.759, 3.066 (stamped 1791281236)
+sent. Now read lab/artifacts/events.ndjson and run npm run lab:report
+
+===== scenario run 3: npm run lab:scenario -- school-exit --speed=1 (repeat, to complete the >=8 line sample) =====
+scenario school-exit: 6 readings, speed=1, device lab-child-1, expect geofenceExit
+  t+0s -> 36.7538, 3.0588 (stamped 1791281679)
+  t+30s -> 36.75395, 3.0589 (stamped 1791281709)
+  t+60s -> 36.7541, 3.059 (stamped 1791281739)
+  t+90s -> 36.75475, 3.05955 (stamped 1791281769)
+  t+120s -> 36.75541, 3.0601 (stamped 1791281799)
+  t+150s -> 36.7561, 3.0607 (stamped 1791281829)
+sent. Now read lab/artifacts/events.ndjson and run npm run lab:report
+
+===== lab/artifacts/events.ndjson (all lines recorded by the sink) =====
+{"eventType":"geofenceEnter","eventId":2,"eventTimeIso":"2026-10-06T09:58:19.000Z","deviceId":1,"deviceName":"lab-child-1","uniqueId":"lab-child-1","geofenceId":2,"geofenceName":"walk-to-park","alarm":null,"batteryLevel":null,"latitude":36.7538,"longitude":3.0588,"accuracyMeters":12,"speedKnots":0,"courseDegrees":0,"fixTimeIso":"2026-10-06T09:58:19.000Z","serverTimeIso":"2026-10-06T09:58:22.642Z","receivedAtIso":"2026-10-06T09:58:28.549Z","forwardLatencyMs":9549,"ingestLatencyMs":3642}
+{"eventType":"geofenceEnter","eventId":1,"eventTimeIso":"2026-10-06T09:58:19.000Z","deviceId":1,"deviceName":"lab-child-1","uniqueId":"lab-child-1","geofenceId":1,"geofenceName":"school","alarm":null,"batteryLevel":null,"latitude":36.7538,"longitude":3.0588,"accuracyMeters":12,"speedKnots":0,"courseDegrees":0,"fixTimeIso":"2026-10-06T09:58:19.000Z","serverTimeIso":"2026-10-06T09:58:22.642Z","receivedAtIso":"2026-10-06T09:58:28.557Z","forwardLatencyMs":9557,"ingestLatencyMs":3642}
+{"eventType":"geofenceExit","eventId":3,"eventTimeIso":"2026-10-06T09:59:49.000Z","deviceId":1,"deviceName":"lab-child-1","uniqueId":"lab-child-1","geofenceId":1,"geofenceName":"school","alarm":null,"batteryLevel":null,"latitude":36.75475,"longitude":3.05955,"accuracyMeters":15,"speedKnots":3.4,"courseDegrees":45,"fixTimeIso":"2026-10-06T09:59:49.000Z","serverTimeIso":"2026-10-06T09:59:49.008Z","receivedAtIso":"2026-10-06T09:59:52.172Z","forwardLatencyMs":3172,"ingestLatencyMs":8}
+{"eventType":"deviceMoving","eventId":4,"eventTimeIso":"2026-10-06T09:59:19.000Z","deviceId":1,"deviceName":"lab-child-1","uniqueId":"lab-child-1","geofenceId":0,"geofenceName":null,"alarm":null,"batteryLevel":null,"latitude":36.75541,"longitude":3.0601,"accuracyMeters":18,"speedKnots":3.4,"courseDegrees":45,"fixTimeIso":"2026-10-06T10:00:19.000Z","serverTimeIso":"2026-10-06T10:00:19.012Z","receivedAtIso":"2026-10-06T10:00:22.181Z","forwardLatencyMs":63181,"ingestLatencyMs":12}
+{"eventType":"geofenceEnter","eventId":5,"eventTimeIso":"2026-10-06T10:04:16.000Z","deviceId":1,"deviceName":"lab-child-1","uniqueId":"lab-child-1","geofenceId":1,"geofenceName":"school","alarm":null,"batteryLevel":null,"latitude":36.75382,"longitude":3.05882,"accuracyMeters":10,"speedKnots":1.5,"courseDegrees":40,"fixTimeIso":"2026-10-06T10:04:16.000Z","serverTimeIso":"2026-10-06T10:04:17.307Z","receivedAtIso":"2026-10-06T10:04:20.360Z","forwardLatencyMs":4360,"ingestLatencyMs":1307}
+{"eventType":"geofenceExit","eventId":6,"eventTimeIso":"2026-10-06T10:05:16.000Z","deviceId":1,"deviceName":"lab-child-1","uniqueId":"lab-child-1","geofenceId":1,"geofenceName":"school","alarm":null,"batteryLevel":null,"latitude":36.7552,"longitude":3.0605,"accuracyMeters":10,"speedKnots":1.5,"courseDegrees":40,"fixTimeIso":"2026-10-06T10:05:16.000Z","serverTimeIso":"2026-10-06T10:05:16.029Z","receivedAtIso":"2026-10-06T10:05:19.151Z","forwardLatencyMs":3151,"ingestLatencyMs":29}
+{"eventType":"geofenceExit","eventId":7,"eventTimeIso":"2026-10-06T10:07:16.000Z","deviceId":1,"deviceName":"lab-child-1","uniqueId":"lab-child-1","geofenceId":2,"geofenceName":"walk-to-park","alarm":null,"batteryLevel":null,"latitude":36.759,"longitude":3.066,"accuracyMeters":12,"speedKnots":5,"courseDegrees":60,"fixTimeIso":"2026-10-06T10:07:16.000Z","serverTimeIso":"2026-10-06T10:07:16.005Z","receivedAtIso":"2026-10-06T10:07:19.146Z","forwardLatencyMs":3146,"ingestLatencyMs":5}
+{"eventType":"geofenceEnter","eventId":8,"eventTimeIso":"2026-10-06T10:14:39.000Z","deviceId":1,"deviceName":"lab-child-1","uniqueId":"lab-child-1","geofenceId":1,"geofenceName":"school","alarm":null,"batteryLevel":null,"latitude":36.7538,"longitude":3.0588,"accuracyMeters":12,"speedKnots":0,"courseDegrees":0,"fixTimeIso":"2026-10-06T10:14:39.000Z","serverTimeIso":"2026-10-06T10:14:39.567Z","receivedAtIso":"2026-10-06T10:14:42.668Z","forwardLatencyMs":3668,"ingestLatencyMs":567}
+{"eventType":"geofenceEnter","eventId":9,"eventTimeIso":"2026-10-06T10:14:39.000Z","deviceId":1,"deviceName":"lab-child-1","uniqueId":"lab-child-1","geofenceId":2,"geofenceName":"walk-to-park","alarm":null,"batteryLevel":null,"latitude":36.7538,"longitude":3.0588,"accuracyMeters":12,"speedKnots":0,"courseDegrees":0,"fixTimeIso":"2026-10-06T10:14:39.000Z","serverTimeIso":"2026-10-06T10:14:39.567Z","receivedAtIso":"2026-10-06T10:14:42.793Z","forwardLatencyMs":3793,"ingestLatencyMs":567}
+{"eventType":"geofenceExit","eventId":10,"eventTimeIso":"2026-10-06T10:16:09.000Z","deviceId":1,"deviceName":"lab-child-1","uniqueId":"lab-child-1","geofenceId":1,"geofenceName":"school","alarm":null,"batteryLevel":null,"latitude":36.75475,"longitude":3.05955,"accuracyMeters":15,"speedKnots":3.4,"courseDegrees":45,"fixTimeIso":"2026-10-06T10:16:09.000Z","serverTimeIso":"2026-10-06T10:16:09.021Z","receivedAtIso":"2026-10-06T10:16:12.145Z","forwardLatencyMs":3145,"ingestLatencyMs":21}
+----- NDJSON line count -----
+10
+
+===== two-zone proof: geofenceName frequency (circle 'school' + LINESTRING 'walk-to-park') =====
+      6 "geofenceName":"school"
+      3 "geofenceName":"walk-to-park"
+# geofenceExit for BOTH school (circle) and walk-to-park (LINESTRING) => route zones are really evaluated.
+
+===== per-line summary (eventType | zone | forward ms | ingest ms) =====
+geofenceEnter  zone=walk-to-park  forward=  9549ms ingest= 3642ms
+geofenceEnter  zone=school        forward=  9557ms ingest= 3642ms
+geofenceExit   zone=school        forward=  3172ms ingest=    8ms
+deviceMoving   zone=null          forward= 63181ms ingest=   12ms
+geofenceEnter  zone=school        forward=  4360ms ingest= 1307ms
+geofenceExit   zone=school        forward=  3151ms ingest=   29ms
+geofenceExit   zone=walk-to-park  forward=  3146ms ingest=    5ms
+geofenceEnter  zone=school        forward=  3668ms ingest=  567ms
+geofenceEnter  zone=walk-to-park  forward=  3793ms ingest=  567ms
+geofenceExit   zone=school        forward=  3145ms ingest=   21ms
+
+===== npm run lab:report -- lab/artifacts/events.ndjson geofenceExit,deviceMoving =====
+# M0 measurement report
+records: 10
+clock-skewed records (forward latency <= 0): 0
+| event | count | p50 forward (ms) | p95 forward (ms) | max forward (ms) | p95 ingest (ms) | without position |
+|---|---|---|---|---|---|---|
+| geofenceEnter | 5 | 4360 | 9557 | 9557 | 3642 | 0 |
+| geofenceExit | 4 | 3146 | 3172 | 3172 | 29 | 0 |
+| deviceMoving | 1 | 63181 | 63181 | 63181 | 12 | 0 |
+verdict: FAIL p95 > 30000 ms
+missing expected types: none
+unexpected types: geofenceEnter

@@ -1,0 +1,43 @@
+# Task 6 evidence 002 — permission shape, from the SAME live server provisioned by bootstrap
+# generated: 2026-10-06 (live H2, JDK 25, Traccar 6.16.0, web.address=127.0.0.1:8082)
+# LAB_DEVICE_ID read from the bootstrap transcript (lab/logs/bootstrap-run1.txt line "CREATED device: id=1"), NOT assumed.
+# Credentials redacted: every request below was authenticated as the admin with
+#   curl -s -u 'lab@example.com:REDACTED'   (Basic auth; the admin password is supplied via env, never pasted here)
+# GET /api/permissions is ADMIN-ONLY and takes two ORDERED query params: ownerKey then propertyKey,
+# where the second id value 0 means "unfiltered" (DatabaseStorage.java:192-198). Omitting one param
+# is a server-side error, so the two-param form is required.
+
+=== (1) FORWARD direction — deviceId (owner) then geofenceId=0 (unfiltered) : WORKS ===
+$ curl -s -u 'lab@example.com:REDACTED' \
+    'http://127.0.0.1:8082/api/permissions?deviceId=1&geofenceId=0'
+HTTP 200
+[{"DEVICEID":1,"GEOFENCEID":1},{"DEVICEID":1,"GEOFENCEID":2}]
+
+# This is the permission shape the Task 5 bootstrap relies on: rows of {OWNERKEY, PROPERTYKEY} with
+# UPPERCASE keys. device 1 (lab-child-1) is linked to geofence 1 (school) AND geofence 2 (walk-to-park),
+# so BOTH scenario zones are really evaluated for this device — the precondition for two geofenceExit events.
+
+=== (2) REVERSE direction — geofenceId (owner) then deviceId=0 : NOT SUPPORTED IN 6.16.0/H2 ===
+$ curl -s -u 'lab@example.com:REDACTED' \
+    'http://127.0.0.1:8082/api/permissions?geofenceId=1&deviceId=0'
+HTTP 400
+org.traccar.storage.StorageException: org.h2.jdbc.JdbcSQLSyntaxErrorException:
+  Table "TC_GEOFENCE_DEVICE" not found; SQL statement:
+  SELECT * FROM tc_geofence_device WHERE geofenceId = ? [42102-252]
+    at org.traccar.storage.DatabaseStorage.getPermissions(DatabaseStorage.java:207)
+    at org.traccar.api.resource.PermissionsResource.get(PermissionsResource.java:86)
+    ...
+# FINDING, recorded honestly (not papered over): the geofence->device read path queries a table named
+# tc_geofence_device that does not exist in this H2 schema. Device/zone links are stored ONE-DIRECTIONAL
+# as tc_device_geofence, which is exactly why bootstrap links Device(owner)->Geofence(property) and why
+# hasLink() reads that same direction. Reversing the two params is not a valid probe on 6.16.0.
+
+=== (3) MISSING one ordered param — divides-by-zero / server error : rejected ===
+$ curl -s -u 'lab@example.com:REDACTED' 'http://127.0.0.1:8082/api/permissions?deviceId=1'
+HTTP 400                       # only the owner param present -> cannot resolve the property table
+$ curl -s -u 'lab@example.com:REDACTED' 'http://127.0.0.1:8082/api/permissions'
+HTTP 400                       # neither param present
+
+=== (4) ADMIN-ONLY — anonymous read of the permission map : refused ===
+$ curl -s 'http://127.0.0.1:8082/api/permissions?deviceId=1&geofenceId=0'
+HTTP 401                       # refused before any permission row is returned

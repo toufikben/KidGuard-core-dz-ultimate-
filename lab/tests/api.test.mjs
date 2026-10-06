@@ -179,3 +179,105 @@ test('wired admin step still EXISTS on a genuine ApiError 409 (idempotence prese
   const admin = results.find((r) => r.name === 'admin');
   assert.equal(admin.result, 'exists');
 });
+
+// --- Task 6: the osmand transaction builder + a future-stamp-safe replay schedule (ruling R29) ---
+// Dynamic import keeps these RED as a clean module-not-found while the pre-existing suite stays green.
+
+test('osmand body uses the parameter names the decoder accepts', async () => {
+  const { osmandBody, OSMAND_PARAM_NAMES } = await import('../scripts/post-position.mjs');
+  const body = osmandBody([
+    ['id', 'lab-child-1'], ['valid', 'true'], ['timestamp', '1791446400'],
+    ['lat', 36.75541], ['lon', 3.0601], ['accuracy', 18], ['speed', 3.4], ['bearing', 45],
+  ]);
+  for (const name of ['id', 'timestamp', 'lat', 'lon', 'accuracy', 'speed', 'bearing']) {
+    assert.ok(body.includes(`${name}=`), name);
+  }
+  assert.deepEqual(
+    OSMAND_PARAM_NAMES.slice(0, 14),
+    ['id', 'deviceid', 'notificationToken', 'valid', 'timestamp', 'lat', 'lon', 'location',
+     'cell', 'wifi', 'speed', 'bearing', 'altitude', 'accuracy']);
+  assert.equal(new URLSearchParams(body).get('speed'), '3.4');
+});
+
+test('osmandBody rejects a parameter name the decoder would never read', async () => {
+  const { osmandBody } = await import('../scripts/post-position.mjs');
+  // 'battery' is NOT a decoder param (the wire name is 'batt'); an unknown key must fail loudly
+  // rather than be silently dropped, so the posted body always matches the decoder whitelist.
+  assert.throws(() => osmandBody([['id', 'lab-child-1'], ['battery', 75]]), /unknown osmand params: battery/);
+});
+
+test('sendSchedule deadlines follow the scenario offsets at the requested speed', async () => {
+  const { sendSchedule } = await import('../scripts/post-position.mjs');
+  const readings = [
+    { offsetSec: 0 }, { offsetSec: 30 }, { offsetSec: 60 }, { offsetSec: 90 },
+    { offsetSec: 120 }, { offsetSec: 150 },
+  ];
+  const t0 = 1_791_446_400;
+  const schedule = sendSchedule(readings, 1, t0);
+  assert.equal(schedule.length, readings.length);
+  // (a) each deadline is exactly t0 + offsetSec/speed, and they are monotonically non-decreasing.
+  assert.deepEqual(
+    schedule.map((s) => s.deadlineMs),
+    readings.map((r) => (t0 + r.offsetSec) * 1000));
+  for (let i = 1; i < schedule.length; i += 1) {
+    assert.ok(schedule[i].deadlineMs >= schedule[i - 1].deadlineMs, `deadline ${i} regressed`);
+  }
+  // speed 3 compresses each deadline to t0 + offset/3 — the pacing is honoured, not the offsets.
+  const fast = sendSchedule(readings, 3, t0);
+  assert.equal(fast[2].deadlineMs, (t0 + 60 / 3) * 1000);
+});
+
+test('sendSchedule never stamps a reading ahead of its own send second (the R29 future-stamp trap)', async () => {
+  const { sendSchedule } = await import('../scripts/post-position.mjs');
+  const readings = [
+    { offsetSec: 0 }, { offsetSec: 30 }, { offsetSec: 60 }, { offsetSec: 90 },
+    { offsetSec: 120 }, { offsetSec: 150 },
+  ];
+  const t0 = 1_791_446_400;
+  const schedule = sendSchedule(readings, 1, t0);
+  // (b) no returned timestampSec may exceed the whole-second wall clock of its own deadlineMs.
+  // scenario.mjs posts at real time >= deadlineMs, so this also means a position is never stamped
+  // in the future of when it arrives — which is what fed the sink negative forward latencies (R19).
+  const hasFutureStamp = (s) => s.timestampSec > Math.floor(s.deadlineMs / 1000);
+  assert.ok(!schedule.some(hasFutureStamp),
+    'no timestampSec may exceed the wall-clock second of its own deadline');
+  // the stamp IS the whole second at which the reading will actually be posted.
+  for (const s of schedule) {
+    assert.equal(s.timestampSec, Math.floor(s.deadlineMs / 1000));
+  }
+  // a bad speed / bad offset / bad t0 is a hard error, never a silently skewed schedule.
+  assert.throws(() => sendSchedule(readings, 0, t0), /speed/);
+  assert.throws(() => sendSchedule([{ offsetSec: 'soon' }], 1, t0), /offsetSec/);
+});
+
+test('the brief relative-sleep shape would stamp positions in the future (the new test has teeth)', async () => {
+  const { sendSchedule } = await import('../scripts/post-position.mjs');
+  const readings = [
+    { offsetSec: 0 }, { offsetSec: 30 }, { offsetSec: 60 }, { offsetSec: 90 },
+    { offsetSec: 120 }, { offsetSec: 150 },
+  ];
+  const t0 = 1_791_446_400;
+  const hasFutureStamp = (s) => s.timestampSec > Math.floor(s.deadlineMs / 1000);
+  // Reconstruct the brief's shape faithfully: reading i is posted only after the accumulated
+  // after-the-fact sleeps max(0, offsetSec_j/speed - 1) for j < i (so its real post second lags),
+  // yet is stamped with its OWN declared offset t0 + round(offsetSec_i/speed). That stamp runs
+  // ahead of the post — exactly the future-timestamp the sink flags as INVALID clock skew.
+  const speed = 1;
+  let postedSec = t0; // wall-clock second at which the next reading is actually posted
+  const briefShape = readings.map((r) => {
+    const record = {
+      timestampSec: t0 + Math.round(r.offsetSec / speed), // declared-offset stamp (the defect)
+      deadlineMs: postedSec * 1000,                        // when it is really posted
+    };
+    postedSec += Math.max(0, r.offsetSec / speed - 1);     // the brief's after-post relative sleep
+    return record;
+  });
+  const offenders = briefShape.filter(hasFutureStamp);
+  assert.ok(offenders.length >= 1,
+    'the relative-sleep shape must demonstrably stamp at least one position in the future');
+  assert.ok(offenders.length >= 3,
+    'school-exit at speed 1 stamps the offset-30/60/90 readings ahead of their post second');
+  // The SAME predicate over the corrected schedule finds no future stamp — this is what gives the
+  // invariant test teeth: were sendSchedule to reuse the declared-offset stamp, it would fail too.
+  assert.ok(!sendSchedule(readings, speed, t0).some(hasFutureStamp));
+});

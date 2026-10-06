@@ -1,0 +1,56 @@
+# Task 6 evidence 003a — Traccar server boot (M0 gate, fresh DB -> newServer:true branch)
+# generated: 2026-10-06  cmd: LAB_JAVA_BIN=/c/Program Files/Java/jdk-25.0.2/bin/java.exe bash lab/traccar/run.sh > lab/logs/traccar-boot.log
+# The warm lab DB was ARCHIVED first (mv to database.mv.db.bak-1791280380), so this was a CLEAN FIRST BOOT.
+# Boot answered GET http://127.0.0.1:8082/api/server -> HTTP 200 after ~40s (polled, never assumed).
+# ORACLE = this boot stdout log. lab/traccar/lab-data/database.trace.db is NOT a failure oracle.
+
+===== first 30 lines of the boot stdout log =====
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldBase has been called by com.google.inject.internal.aop.HiddenClassDefiner (file:/C:/Users/Administrator/Documents/Qoder/2026-10-05/6bdda3ce/kidguard-core/lab/traccar/lib/guice-7.0.0.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.inject.internal.aop.HiddenClassDefiner
+WARNING: sun.misc.Unsafe::staticFieldBase will be removed in a future release
+2026-10-06 10:54:31  INFO: Operating system name: Windows 11 version: 10.0 architecture: amd64
+2026-10-06 10:54:32  INFO: Java runtime name: Java HotSpot(TM) 64-Bit Server VM vendor: Oracle Corporation version: 25.0.2+10-LTS-69
+2026-10-06 10:54:32  INFO: Memory limit heap: 512mb non-heap: 0mb
+2026-10-06 10:54:32  INFO: Character encoding: UTF-8
+2026-10-06 10:54:32  INFO: Version: 6.16.0
+2026-10-06 10:54:32  INFO: Starting server...
+2026-10-06 10:54:38  INFO: HikariPool-1 - Starting...
+2026-10-06 10:54:41  INFO: HikariPool-1 - Added connection conn0: url=jdbc:h2:./lab-data/database user=SA
+2026-10-06 10:54:41  INFO: HikariPool-1 - Start completed.
+2026-10-06 10:54:42  INFO: Set default schema name to PUBLIC
+2026-10-06 10:54:47  INFO: Creating snapshot
+2026-10-06 10:54:48  INFO: Successfully acquired change log lock
+2026-10-06 10:54:48  INFO: Creating database changelog table with name: PUBLIC.DATABASECHANGELOG
+2026-10-06 10:54:48  INFO: Clearing database change log checksums for database h2
+2026-10-06 10:54:49  INFO: Successfully released change log lock
+2026-10-06 10:54:49  INFO: Command execution complete
+2026-10-06 10:54:55  INFO: Reading from PUBLIC.DATABASECHANGELOG
+2026-10-06 10:55:00  INFO: Successfully acquired change log lock
+2026-10-06 10:55:00  INFO: Using deploymentId: 1280481999
+2026-10-06 10:55:00  INFO: Reading from PUBLIC.DATABASECHANGELOG
+Running Changeset: changelog-4.0-clean::changelog-4.0-clean::author
+2026-10-06 10:55:02  INFO: Table tc_attributes created
+2026-10-06 10:55:02  INFO: Table tc_calendars created
+2026-10-06 10:55:02  INFO: Table tc_commands created
+2026-10-06 10:55:02  INFO: Table tc_device_attribute created
+2026-10-06 10:55:02  INFO: Table tc_device_command created
+
+===== BOOT-PHASE error oracle (lines 1..294, i.e. up to 'Started oejs.Server') =====
+lines matching SEVERE|ERROR|Exception|Caused by during startup:
+0
+=> 0 = CLEAN STARTUP. All server-side startup lines are INFO (HikariPool, Liquibase changesets, Jetty, port bind).
+
+===== whole-log error count, and what the exceptions actually are =====
+lines matching SEVERE|ERROR|Exception|Caused by (whole log, incl runtime): 8
+lines matching 'Failed to get notificator telegram':                       8
+# All 8 post-boot exceptions are the Telegram NOTIFICATOR failing on the
+# FAKE placeholder token supplied via env (LAB_TELEGRAM_BOT_TOKEN / LAB_TELEGRAM_CHAT_ID placeholders).
+# They fire only when a real geofenceExit triggers a Telegram send. This is EXPECTED: real Telegram delivery
+# is deferred to VPS (spec 10); the M0 pipeline is event.forward.url -> local sink, which succeeded (see 003-scenario-run.txt). Not a boot fault.
+
+===== port-binding proof (netstat, server pid) =====
+  TCP    0.0.0.0:5055           0.0.0.0:0              LISTENING       8340
+  TCP    127.0.0.1:8082         0.0.0.0:0              LISTENING       8340
+  TCP    [::]:5055              [::]:0                 LISTENING       8340
+# 8082 admin/API listens on 127.0.0.1 ONLY (web.address=127.0.0.1); 5055 osmand ingest listens on 0.0.0.0 (phone must reach it).
