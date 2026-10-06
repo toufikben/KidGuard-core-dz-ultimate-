@@ -1,0 +1,13 @@
+{
+  "name": "school-exit",
+  "expectEvent": "geofenceExit",
+  "zone": { "type": "circle", "lat": 36.7538, "lon": 3.0588, "radiusMeters": 100, "name": "school" },
+  "readings": [
+    { "offsetSec": 0,   "lat": 36.75380, "lon": 3.05880, "accuracy": 12, "speedKnots": 0,   "course": 0 },
+    { "offsetSec": 30,  "lat": 36.75395, "lon": 3.05890, "accuracy": 12, "speedKnots": 1.2, "course": 45 },
+    { "offsetSec": 60,  "lat": 36.75410, "lon": 3.05900, "accuracy": 15, "speedKnots": 1.8, "course": 45 },
+    { "offsetSec": 90,  "lat": 36.75475, "lon": 3.05955, "accuracy": 15, "speedKnots": 3.4, "course": 45 },
+    { "offsetSec": 120, "lat": 36.75541, "lon": 3.06010, "accuracy": 18, "speedKnots": 3.4, "course": 45 },
+    { "offsetSec": 150, "lat": 36.75610, "lon": 3.06070, "accuracy": 18, "speedKnots": 4.0, "course": 45 }
+  ]
+}

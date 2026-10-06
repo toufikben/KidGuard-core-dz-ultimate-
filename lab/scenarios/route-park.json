@@ -1,0 +1,20 @@
+{
+  "name": "route-park",
+  "expectEvent": "geofenceExit",
+  "zone": {
+    "type": "polyline",
+    "name": "walk-to-park",
+    "points": [
+      { "lat": 36.7538, "lon": 3.0588 },
+      { "lat": 36.7552, "lon": 3.0605 },
+      { "lat": 36.7568, "lon": 3.0621 }
+    ],
+    "bufferMeters": 80
+  },
+  "readings": [
+    { "offsetSec": 0,   "lat": 36.75382, "lon": 3.05882, "accuracy": 10, "speedKnots": 1.5, "course": 40 },
+    { "offsetSec": 60,  "lat": 36.75520, "lon": 3.06050, "accuracy": 10, "speedKnots": 1.5, "course": 40 },
+    { "offsetSec": 120, "lat": 36.75680, "lon": 3.06210, "accuracy": 12, "speedKnots": 1.6, "course": 40 },
+    { "offsetSec": 180, "lat": 36.75900, "lon": 3.06600, "accuracy": 12, "speedKnots": 5.0, "course": 60 }
+  ]
+}
