@@ -1,0 +1,31 @@
+{
+  "event": {
+    "id": 41,
+    "type": "geofenceExit",
+    "eventTime": "2026-10-05T10:00:00.000Z",
+    "deviceId": 7,
+    "positionId": 512,
+    "geofenceId": 3,
+    "attributes": {}
+  },
+  "position": {
+    "id": 512,
+    "deviceId": 7,
+    "protocol": "osmand",
+    "serverTime": "2026-10-05T10:00:00.500Z",
+    "deviceTime": "2026-10-05T10:00:00.000Z",
+    "fixTime": "2026-10-05T09:59:57.000Z",
+    "valid": true,
+    "latitude": 36.75541,
+    "longitude": 3.05902,
+    "altitude": 12.0,
+    "speed": 3.4,
+    "course": 141,
+    "accuracy": 18,
+    "network": null,
+    "geofenceIds": [],
+    "attributes": { "battery": 74 }
+  },
+  "device": { "id": 7, "name": "lab-child-1", "uniqueId": "lab-child-1", "groupId": 1, "attributes": {} },
+  "geofence": { "id": 3, "name": "school", "area": "CIRCLE (36.7538 3.0588, 100)", "attributes": {} }
+}
