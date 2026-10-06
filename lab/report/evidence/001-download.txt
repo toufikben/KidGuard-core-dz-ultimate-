@@ -1,0 +1,6 @@
+# Task 2 Step 7 — Traccar 6.16.0 download evidence
+# generated: 2026-10-06T07:35:38Z
+# command: curl -fSL -o traccar-other-6.16.0.zip https://github.com/traccar/traccar/releases/download/v6.16.0/traccar-other-6.16.0.zip
+# size_bytes: 166413827
+# sha256sum:
+87be9347090248747cf31ff00a554d59c28e50d1d41d1f68f7f16957976bde55 *traccar-other-6.16.0.zip

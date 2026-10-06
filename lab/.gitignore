@@ -1,6 +1,7 @@
-traccar/kidguard-lab.xml
 artifacts/
 lab-data/
-traccar/server-*.log
-traccar/traccar-other-*/
-traccar/*.zip
+# The pinned Traccar distribution is unpacked flat here (979 files) and must never be
+# committed; only the template and the runner are tracked.
+traccar/*
+!traccar/kidguard-lab.template.xml
+!traccar/run.sh
