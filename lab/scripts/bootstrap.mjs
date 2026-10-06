@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
-  createApiClient, buildUserPayload, buildDevicePayload,
+  createApiClient, ApiError, buildUserPayload, buildDevicePayload,
   buildCircleGeofencePayload, buildRouteGeofencePayload,
   buildNotificationPayload, buildPermissionPayload,
 } from './api.mjs';
@@ -31,8 +31,9 @@ export async function resolveAdmin(client, env) {
     const users = await client.get('/users');
     const adminId = users.find((u) => u.email === env.LAB_ADMIN_EMAIL)?.id;
     if (adminId === undefined) {
-      throw new Error(`server already initialised but ${env.LAB_ADMIN_EMAIL} is not among /users; `
-        + 'this is a lab-only DB — delete lab/traccar/lab-data/database.mv.db and re-run bootstrap');
+      throw new Error(`no user with email ${env.LAB_ADMIN_EMAIL} was found among /users `
+        + `on an initialised server (newServer=${server.newServer}); this is a lab-only DB — `
+        + 'delete lab/traccar/lab-data/database.mv.db and re-run bootstrap to re-provision from scratch');
     }
     return { adminId, exists: true, detail: `already initialised, admin id=${adminId}` };
   }
@@ -53,9 +54,12 @@ export async function runSteps(client, env, results = []) {
         results.push({ name, result: 'created', detail: value });
       }
     } catch (error) {
-      // A genuine constraint/validation 400 (e.g. the groupId FK crash) must stay FAILED;
-      // only a real "already there" conflict maps to exists. Safety instrument: never swallow.
-      if (error.status === 409 || /already|exist|duplicate|unique index|primary key violation/i.test(error.message ?? '')) {
+      // Only a real server conflict (ApiError carries .status) may classify as exists. Our own throws,
+      // a TypeError from an unexpected shape, or a fetch failure are internal errors: FAILED + rethrow,
+      // never swallowed by a message-text test. A genuine 409, or a 400 whose body says the row is
+      // already there, still maps to exists so re-running bootstrap stays idempotent. Safety: never swallow.
+      if (error instanceof ApiError &&
+          (error.status === 409 || /already|exist|duplicate|unique index|primary key violation/i.test(error.message ?? ''))) {
         results.push({ name, result: 'exists', detail: String(error.body ?? error.message).slice(0, 120) });
       } else {
         results.push({ name, result: 'failed', detail: error.message });

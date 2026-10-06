@@ -132,3 +132,50 @@ test('admin step reports the real id when the lab admin already exists', async (
   assert.equal(out.exists, true);
   assert.equal(out.adminId, 1);
 });
+
+// --- fix-round-2 item: the internal "no admin found" throw must FAIL on the wired path, not EXISTS ---
+// Round 1 tested resolveAdmin directly and bypassed step()'s classifier, which masked that the thrown
+// message began "server already initialised…" and was swallowed as EXISTS. These drive runSteps itself.
+
+test('wired admin step FAILS (not EXISTS) when an initialised server has no lab admin', async () => {
+  const results = [];
+  const fake = {
+    async get(path) {
+      if (path === '/server') return { newServer: false };
+      if (path === '/users') return [{ id: 9, email: 'someone-else@example.com' }];
+      return [];
+    },
+    async post() { return { id: 1 }; },
+    async put() { return null; },
+  };
+  // The internal throw is not an ApiError, so runSteps must rethrow, not record EXISTS.
+  await assert.rejects(
+    () => bootstrap.runSteps(fake, { LAB_ADMIN_EMAIL: 'lab@example.com', LAB_ADMIN_PASSWORD: 'pw' }, results));
+  const admin = results.find((r) => r.name === 'admin');
+  assert.ok(admin, 'the admin step is recorded');
+  assert.equal(admin.result, 'failed');
+});
+
+test('wired admin step still EXISTS on a genuine ApiError 409 (idempotence preserved)', async () => {
+  const results = [];
+  const fake = {
+    async get(path) {
+      if (path === '/server') return { newServer: true, registration: false };
+      if (path === '/notifications') return [{ id: 6, type: 'geofenceExit', description: 'lab-geofenceExit' }];
+      return [];
+    },
+    async post(path, body) {
+      // A real conflict from the server: the admin email already exists (409). Only the admin POST hits it.
+      if (path === '/users' && body?.email === 'lab@example.com') {
+        throw new ApiError(409, 'User with the same email already exists');
+      }
+      return { id: 1 };
+    },
+    async put() { return null; },
+  };
+  // runSteps must complete without rejecting, and the admin step must be EXISTS, proving the instanceof
+  // hardening still classifies a genuine ApiError(409) as an idempotent "already there".
+  await bootstrap.runSteps(fake, { LAB_ADMIN_EMAIL: 'lab@example.com', LAB_ADMIN_PASSWORD: 'pw' }, results);
+  const admin = results.find((r) => r.name === 'admin');
+  assert.equal(admin.result, 'exists');
+});
