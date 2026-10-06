@@ -55,3 +55,55 @@ test('markdown verdict pins all three states: PASS, FAIL, and NO DATA', async ()
   assert.match(toMarkdown(unmeasured), /verdict: NO DATA/);
   assert.doesNotMatch(toMarkdown(unmeasured), /verdict: PASS/);
 });
+
+// R19: a clock-skewed forward latency is a bogus measurement, not a fast one.
+// The report must refuse both PASS and FAIL-p95 while any exist.
+const skewed = (forwardLatencyMs) => ({
+  eventType: 'geofenceExit', forwardLatencyMs, ingestLatencyMs: 1_200, latitude: 36.7538,
+});
+
+test('summarize exposes a clock-skew anomaly class for non-positive forward latencies', () => {
+  const summary = summarize(
+    [skewed(-5_000), skewed(0), skewed(1_200), skewed(-1)], ['geofenceExit']);
+  assert.equal(summary.clockSkew.count, 3);
+  assert.equal(summary.clockSkew.minForwardLatencyMs, -5_000);
+  const clean = summarize([skewed(1_200)], ['geofenceExit']);
+  assert.equal(clean.clockSkew.count, 0);
+  assert.equal(clean.clockSkew.minForwardLatencyMs, null);
+});
+
+test('report refuses PASS while any record is clock-skewed', async () => {
+  const { toMarkdown } = await import('../sink/report.mjs');
+  const md = toMarkdown(summarize([skewed(-5_000), skewed(1_200)], ['geofenceExit']));
+  assert.match(md, /verdict: INVALID clock skew/);
+  assert.doesNotMatch(md, /verdict: PASS/);
+  assert.match(md, /min forward latency -5000 ms/);
+});
+
+test('a forward latency of exactly zero is not a trustworthy measurement', async () => {
+  const { toMarkdown } = await import('../sink/report.mjs');
+  const md = toMarkdown(summarize([skewed(0), skewed(1_500)], ['geofenceExit']));
+  assert.doesNotMatch(md, /verdict: PASS/);
+  assert.match(md, /verdict: INVALID clock skew/);
+});
+
+test('skew outranks the budget verdict: untrustworthy data cannot read as FAIL p95 either', async () => {
+  const { toMarkdown } = await import('../sink/report.mjs');
+  const md = toMarkdown(summarize([skewed(-5_000), skewed(31_000)], ['geofenceExit']));
+  assert.doesNotMatch(md, /verdict: PASS/);
+  assert.doesNotMatch(md, /verdict: FAIL p95/);
+  assert.match(md, /verdict: INVALID clock skew/);
+});
+
+// Task 6 invokes `npm run lab:report -- lab/artifacts/events.ndjson` — a path relative to
+// the repo root. The CLI used to build `file:///lab/...` from it and die on Windows.
+test('report CLI accepts a repo-relative events file', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
+  const out = execFileSync(process.execPath,
+    ['lab/sink/report.mjs', 'lab/fixtures/events.ndjson', 'geofenceExit'],
+    { cwd: repoRoot, encoding: 'utf8' });
+  assert.match(out, /verdict: PASS p95 <= 30000 ms/);
+  assert.match(out, /clock-skewed records \(forward latency <= 0\): 0/);
+});
