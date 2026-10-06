@@ -44,7 +44,7 @@ export function buildPermissionPayload(ownerKey, ownerId, propertyKey, propertyI
 export function createApiClient({ baseUrl, email, password }) {
   const basic = 'Basic ' + Buffer.from(`${email}:${password}`).toString('base64');
 
-  async function request(method, path, body, { expectJson = true } = {}) {
+  async function request(method, path, body) {
     const response = await fetch(`${baseUrl}${path}`, {
       method,
       headers: { authorization: basic, ...(body ? { 'content-type': 'application/json' } : {}) },
@@ -52,7 +52,7 @@ export function createApiClient({ baseUrl, email, password }) {
     });
     const text = await response.text();
     if (!response.ok) throw new ApiError(response.status, text);
-    if (!expectJson || text === '') return null;
+    if (text === '') return null;
     return JSON.parse(text);
   }
 

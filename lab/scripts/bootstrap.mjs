@@ -16,9 +16,34 @@ async function hasLink(client, ownerKey, ownerId, propertyKey, propertyId) {
     .some(([key, value]) => key.toUpperCase() === want && Number(value) === Number(propertyId)));
 }
 
+// School zone geometry comes from the scenario file, exactly like the route step reads its own:
+// a single source of truth so an edit to lab/scenarios/school-exit.json re-provisions the gate zone.
+export async function readCircleGeofencePayload(scenarioUrl) {
+  const scenario = JSON.parse(await readFile(scenarioUrl, 'utf8'));
+  return buildCircleGeofencePayload(scenario.zone);
+}
+
+// admin: the already-initialised branch must never claim an id it never located. This is a
+// lab-only DB, so the remedy is to reset it and re-run rather than retry or auto-create blindly.
+export async function resolveAdmin(client, env) {
+  const server = await client.get('/server');
+  if (server.newServer !== true) {
+    const users = await client.get('/users');
+    const adminId = users.find((u) => u.email === env.LAB_ADMIN_EMAIL)?.id;
+    if (adminId === undefined) {
+      throw new Error(`server already initialised but ${env.LAB_ADMIN_EMAIL} is not among /users; `
+        + 'this is a lab-only DB — delete lab/traccar/lab-data/database.mv.db and re-run bootstrap');
+    }
+    return { adminId, exists: true, detail: `already initialised, admin id=${adminId}` };
+  }
+  const user = await client.post('/users', buildUserPayload({
+    name: 'lab-admin', email: env.LAB_ADMIN_EMAIL, password: env.LAB_ADMIN_PASSWORD }));
+  return { adminId: user.id, exists: false, detail: `id=${user.id}` };
+}
+
 // run() returns a string => CREATED, or { exists: true, detail } => EXISTS (idempotent re-run).
-async function runSteps(client, env) {
-  const results = [];
+// results is an out-param so the transcript collected before a failure survives the throw.
+export async function runSteps(client, env, results = []) {
   async function step(name, run) {
     try {
       const value = await run();
@@ -42,16 +67,10 @@ async function runSteps(client, env) {
   // 1. أول مستخدم يصبح administrator تلقائياً ما دامت القاعدة فارغة (UserResource.java:113)
   let adminId;
   await step('admin', async () => {
-    const server = await client.get('/server');
-    if (server.newServer !== true) {
-      const users = await client.get('/users');
-      adminId = users.find((u) => u.email === env.LAB_ADMIN_EMAIL)?.id;
-      return { exists: true, detail: `already initialised, admin id=${adminId}` };
-    }
-    const user = await client.post('/users', buildUserPayload({
-      name: 'lab-admin', email: env.LAB_ADMIN_EMAIL, password: env.LAB_ADMIN_PASSWORD }));
-    adminId = user.id;
-    return `id=${user.id}`;
+    const admin = await resolveAdmin(client, env);
+    adminId = admin.adminId;
+    if (admin.exists) return { exists: true, detail: admin.detail };
+    return admin.detail;
   });
 
   // 2. close self-registration (Server.registration; UserResource.java:117)
@@ -78,11 +97,12 @@ async function runSteps(client, env) {
   // 4. the school zone, drawn from geometry not localStorage (spec 6)
   let geofence;
   await step('geofence-school', async () => {
+    const payload = await readCircleGeofencePayload(
+      new URL('scenarios/school-exit.json', new URL('../', import.meta.url)));
     const zones = await client.get('/geofences');
-    geofence = zones.find((z) => z.name === 'school');
+    geofence = zones.find((z) => z.name === payload.name);
     if (geofence) return { exists: true, detail: `id=${geofence.id} exists` };
-    geofence = await client.post('/geofences', buildCircleGeofencePayload({
-      name: 'school', lat: 36.7538, lon: 3.0588, radiusMeters: 100 }));
+    geofence = await client.post('/geofences', payload);
     return `id=${geofence.id} area=${geofence.area}`;
   });
 
@@ -170,16 +190,27 @@ async function runSteps(client, env) {
   return results;
 }
 
-export async function bootstrap(env) {
+export async function bootstrap(env, results = []) {
   const client = createApiClient({
     baseUrl: env.LAB_API_URL ?? 'http://127.0.0.1:8082/api',
     email: env.LAB_ADMIN_EMAIL,
     password: env.LAB_ADMIN_PASSWORD,
   });
-  return { client, steps: await runSteps(client, env) };
+  return { client, steps: await runSteps(client, env, results) };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const { steps } = await bootstrap(process.env);
-  for (const r of steps) console.log(`${r.result.toUpperCase()} ${r.name}: ${r.detail ?? ''}`);
+  const print = (rows) => {
+    for (const r of rows) console.log(`${r.result.toUpperCase()} ${r.name}: ${r.detail ?? ''}`);
+  };
+  // results is the same array runSteps fills, so on failure the transcript collected so far
+  // survives to be printed; the original error still propagates with a nonzero exit.
+  const results = [];
+  try {
+    print((await bootstrap(process.env, results)).steps);
+  } catch (error) {
+    print(results);
+    process.exitCode = 1;
+    throw error;
+  }
 }
