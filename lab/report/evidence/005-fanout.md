@@ -66,13 +66,19 @@ $ npm run lab:check
 config ok: ...\lab\traccar\kidguard-lab.template.xml
 ```
 
-**تعديلان أُضيفا إلى المُولَّد فقط** (`lab/traccar/kidguard-lab.xml` — ملف git-ignored؛ القالب
-المُتبَّع `kidguard-lab.template.xml` **لم يُمسَّ**)، لأن القياس يحتاج قناة رصد لا قناة تسليم:
+**أُضيف التعديلان أثناء القياس إلى المُولَّد** (`lab/traccar/kidguard-lab.xml` — ملف git-ignored)
+لأن القياس يحتاج قناة رصد لا قناة تسليم:
 
 ```xml
 <entry key='mail.debug'>true</entry>
 <entry key='notificator.types'>web,mail</entry>
 ```
+
+**ثم نُقِلا إلى القالب المُتبَّع بعد القياس** ضمن إصلاح العيب R34 (§9.3)، فـ**هذا الالتزام يُغيّر
+القالب** `lab/traccar/kidguard-lab.template.xml:23-31`. لا يُطلب إعادة توليد لتثبيت القياس لأن
+القياس سبق النقل؛ لكن أي تشغيل لاحق لنفس القالب يعطي نفس الإعداد حرفيّاً (تحقّق: `grep -n
+'mail.debug\|notificator.types' lab/traccar/kidguard-lab.xml`). قائمة ملفات git المُتبَّعة التي
+مَسَّها هذا الالتزام هي في §10، وهي ليست «لا شيء».
 
 التسويغ من بايت كود النسخة المُثبَّتين (قُريء بأداة `javap` على `tracker-server.jar` المثبّت):
 
@@ -92,10 +98,22 @@ sink: http://127.0.0.1:5199/alert -> ...\lab\artifacts\events.ndjson
 
 $ LAB_JAVA_BIN="/c/Program Files/Java/jdk-25.0.2/bin/java.exe" bash lab/traccar/run.sh \
     > lab/traccar/fanout-boot-A.log 2>&1 &
-READY after 15 polls (HTTP 200)          # ~45 ثانية، استطلاع كل 3ث على /api/server
+# حلقة استطلاع /api/server كل 3ث حتى HTTP 200 (15 استطلاعاً، ~45ث) — خرجَ على الطرفية فقط،
+# غير محفوظ في أثر؛ المُحفوظ المطابق لها في نفس السجل:
+$ grep -n "Started oejs.Server" lab/traccar/fanout-boot-A.log
+293:2026-10-06 21:39:11  INFO: Started oejs.ServerConnector@7af56b26{HTTP/1.1, (http/1.1)}{tempuri.org:8082}
+294:2026-10-06 21:39:11  INFO: Started oejs.Server@3ea6faf0{STARTING}[12.1.13,sto=0] @14865ms
 $ curl -s http://127.0.0.1:8082/api/server | ...
-newServer=true registration=false version=6.16.0     # قاعدة نظيفة فعلاً
+newServer=true registration=false version=6.16.0     # قراءة الطرفية؛ لم يُحفَظ مخرجها، لكن
+                                                     # دلالتها مؤكَّدة بما حُفظ: bootstrap على قاعدة
+                                                     # نظيفة أعطى CREATED admin: id=1 (وهو يفشل
+                                                     # EXISTS لو كان المستخدم موجوداً)
 ```
+
+(هذه السطور تُقرأ من الأثر المُحفَظ لا من الذاكرة: `lab/traccar/fanout-boot-A.log:9` للإصدار 6.16.0
+و`:293-294` لبدء المستمع على 8082، فسطر `Started oejs.ServerConnector…8082` هو دليل الجاهزية المحفوظ.
+وملاحظة R31 تنطبق هنا: لا سطر `web: http://127.0.0.1:8082` في سجل 6.16.0، فالمُعادِل الحقيقي هو
+`ServerConnector…{tempuri.org:8082}`.)
 
 **التهيئة (`npm run lab:bootstrap`) — الناتج الحرفي، والـids منه قُرِئت ولا فُترضت**
 (النسخة الكاملة في `lab/logs/bootstrap-fanout-run1.txt`؛ أُعيد تشغيلها مرّة ثانية فكانت كل الخطوات
@@ -290,19 +308,92 @@ userId=2&notificationId=0      [{"USERID":2,"NOTIFICATIONID":1}]   # تصريح 
 ```
 
 `notifications: 0` و**صفر** سطر `Email sent`: لأن السجل `always:false`، فلا يُقيَّم أساساً على الجهاز
-بلا ذلك الرابط (وهذا ما يوثّقه تعليق `bootstrap.mjs:161-163`، والآن مقاس).
+بلا ذلك الرابط (وهذا ما يوثّقه تعليق `bootstrap.mjs:166-169`، والآن مقاس).
+
+---
+
+## 6b. الحالة E — الاتجاه المعكوس: تصريح `Notification` باقٍ، ومشاركة الجهاز محذوفة
+
+**لماذا هذا القياس موجود:** مراجعة مستقلة على الالتزام `90cb465` وجدت أن §7 يدّعي «لا شيء من
+الرابطَين يكفي وحده» بينما القياس الذي جرى اتجاهٌ واحد فقط (حذف التصريح مع إبقاء المشاركة).
+النصف الثاني كان سيستند إلى دلالة كود `CacheManager` وحده، وهذا يخالف قاعدة §0. فأُجري القياس
+الناقص قبل اعتماد النتيجة.
+
+الحذف — بجسم JSON، وحذف **مشاركة الجهاز** وحدها هذه المرّة:
+
+```bash
+$ curl -X DELETE -H 'content-type: application/json' -d '{"userId":2,"deviceId":1}' \
+    'http://127.0.0.1:8082/api/permissions'
+DELETE HTTP 204
+userId=2&notificationId=0      [{"USERID":2,"NOTIFICATIONID":1}]   # التصريح باقٍ
+userId=2&deviceId=0            []                                  # المشاركة محذوفة
+deviceId=1&notificationId=0    [{"DEVICEID":1,"NOTIFICATIONID":1}] # باقٍ
+userId=1&notificationId=0      [{"USERID":1,"NOTIFICATIONID":1}]   # باقٍ
+userId=1&deviceId=0            [{"USERID":1,"DEVICEID":1}]         # باقٍ
+GET /api/devices كولي-2        []
+GET /api/notifications كولي-2  [{"id":1,…,"type":"geofenceExit","notificators":"mail"}]
+```
+
+(النصّ الحرفي: `lab/logs/fanout-condE-state-before.txt` و`fanout-condE-state-after.txt`. لاحظ أن
+الولي الثاني **ما زال يرى سجل التنبيه** ويملك التصريح، ولا يرى الجهاز — هذه بالضبط فرضية «التصريح
+وحده».)
+
+ثم أُعيد السيناريو نفسه (`lab/logs/fanout-replay9-condE.txt`) وقُرئ سجلّ الخادم
+(`lab/traccar/fanout-boot-E.log`) بنفس طريقة §5 — معرّف المستقبِل من رمز unsubscribe لا من نص
+الرسالة:
+
+```
+2026-10-06 23:45:23  INFO: Event id: lab-child-1, time: 2026-10-06 23:41:41, type: geofenceExit, notifications: 1
+2026-10-06 23:47:17  INFO: Email sent
+To: lab-a***@***                 # "u":1 (المدير)
+— ولا سطر Email sent آخر في كامل السجل —
+```
+
+فكّ كل رموز unsubscribe في هذا الملف يعطي `{u:1}` فقط (`lab/logs/fanout-condE-recipient-tally.txt`)
+⇒ **التصريح وحده لا يجعل الولي الثاني مستقبِلاً.** الآن الاتجاهان مقاسان: حذف التصريح مع إبقاء
+المشاركة أعطى `{u:1}` (§6)، وحذف المشاركة مع إبقاء التصريح أعطى `{u:1}` (هنا)، والاجتماع أعطى
+`{u:1,u:2}` (§5). أي أن علاقة الخادم هي **تقاطع** الرابطَين فعلاً، لا قراءة كود.
+
+**ضابط الحالة E (نفس عملية JVM، بلا إعادة إقلاع):** أُعيد `user2 -> device1` وحده (§6b
+الأثر `fanout-condE-control-restore.txt`: POST HTTP 204 ثم الطوبولوجيا كاملة) وأُعيد السيناريو
+(`fanout-replay10-condE-control.txt`)، فالنصّ من سجلّ الخادم في `fanout-condE-control-email-block.txt`:
+
+```
+2026-10-06 23:52:42  INFO: Event id: lab-child-1, time: 2026-10-06 23:52:39, type: geofenceExit, notifications: 1
+2026-10-06 23:52:43  INFO: Email sent
+To: lab-a***@***                 # "u":1
+2026-10-06 23:52:43  INFO: Email sent
+To: lab-g***-2@***               # "u":2
+```
+
+رجعت المجموعة إلى `{u:1,u:2}` برابط واحد فقط ⇒ الاتجاه مقاس من الحذف والإرجاع معاً، ك§6 تماماً.
+
+**أثر جانبي مقاس في هذا التشغيل، وهو أهم من التوقيت:** اختيار المستقبِلين لم يُسجَّل إلا بعد
+**114 ثانية** من سطر الحدث (`23:45:23` → `23:47:17`)، بينما كان `+3ث` في §5 و§6. السبب في نفس
+السجل: نداء الـgeocoder الخارجي إلى nominatim فشل بعد انتظار TLS طويل
+(`SSLHandshakeException: Remote host terminated the handshake`، السطر 131 من نفس الملف)، ونصّ
+الرسالة رجع إلى الإحداثيات الخام بدل العنوان (`Point: … 36.75475°, 3.05955°`). أي أن **تسليم
+الإنذار معطَّل على نداء شبكة خارجي في نفس الخيط**: في منطقة لا يُبلَغ فيها nominatim يتأخر
+الإنذار دقائق. والضابط في نفس السجل، بعد رابط واحد مستعاد وبدون إعادة إقلاع، أعاد `+4ث`
+(`23:52:39` → `23:52:43`) حين رجعت الجيرجودر عنواناً — فالتأخير تابع لنداء الجيرجودر لا لطوبولوجيا
+الروابط. هذا يُصلّب التوصية السابقة (§9.2) من «تسريب موقع» إلى «تسريب موقع + زمن تسليم غير
+محدود»: `geocoder.enable=false` أو جيرجودر محلي شرط قبل أي تشغيل حقيقي، ويُقاس زمن التسليم بدونه
+في الجزء B أو في مهمة الاستضافة. (لم يُقَس هنا مع geocoder معطَّل لأن ذلك يغيّر إعداد الخادم بعد
+اكتمال قياس الجزء A، وهو خارج ما طُلب من هذا الجزء.)
 
 ---
 
 ## 7. قرار Step 3 من الجدول + قراءة H2 المباشرة
 
 **السطر الثاني من جدول المهمة هو الصحيح على هذه النسخة:** *لا يستقبل الولي الثاني إلا بعد التصريح
-على `Notification`*. القاعدة الحاسمة هي تقاطع `CacheManager.getNotificationUsers(notificationId, deviceId)`
-(المصادر التي ذكرها Brief: `CacheManager.java:119-124`)، والقياس يُظهر أن التصريح **لازم**، وأن رابط
-`Device -> Notification` **لازم** أيضاً لأن `always:false` (الحالة D). أي أن المواصفة §3 يجب أن
-تُغلَق على أن كل وليّ يحتاج **رابطَين** لا واحدًا: `user->device` (مشاركة) **و** `user->notification`
-(تصريح)، مع `device->notification`. لا نتيجة null: المتغيّرة الوحيدة عكست النتيجة في الاتجاهين
-(B ⇒ وليّ واحد؛ الضابط ⇒ وليّان).
+على `Notification`*. مرشّح الخادم هو تقاطع `CacheManager.getNotificationUsers(notificationId, deviceId)`
+(المصادر التي ذكرها Brief: `CacheManager.java:119-124`)، و**التقاطع قيس من الاتجاهين لا من قراءة
+الكود**: حذف التصريح مع بقاء المشاركة ⇒ وليّ واحد (§6)، وحذف المشاركة مع بقاء التصريح ⇒ وليّ واحد
+(§6b، حالة E)، والاجتماع ⇒ وليّان (§5)، وإرجاع الرابط المحذوف وحده في نفس عملية JVM يعيد الزوج (§6
+ضابط، §6b ضابط). وأُضيف أن رابط `Device -> Notification` **لازم** أيضاً لأن `always:false` (الحالة
+D). أي أن المواصفة §3 يجب أن تُغلَق على أن كل وليّ يحتاج **رابطَين** لا واحدًا: `user->device`
+(مشاركة) **و** `user->notification` (تصريح)، مع `device->notification`. لا نتيجة null: في كل حالة
+كان المتغيّر واحداً والنتيجة انعكست بعكسه.
 
 قراءة H2 مباشرة بعد إيقاف الخادم (نسخة ملف + `org.h2.tools.RunScript`؛ لم تعمل أثناء التشغيل — §3):
 
@@ -321,9 +412,6 @@ SELECT userid, deviceid FROM tc_user_device ORDER BY userid;
 SELECT id, name, email, administrator FROM tc_users ORDER BY id;
 --> 1 lab-admin     lab-a***@***  TRUE
 --> 2 lab-guardian-2 lab-g***-2@*** FALSE
-SELECT COUNT(*) AS event_rows FROM tc_events; --> 11
-SELECT type, COUNT(*) FROM tc_events GROUP BY type;
---> deviceMoving 1 / deviceStopped 1 / geofenceEnter 5 / geofenceExit 4
 SELECT column_name FROM information_schema.columns WHERE table_name='TC_EVENTS';
 --> ID TYPE EVENTTIME DEVICEID POSITIONID GEOFENCEID ATTRIBUTES MAINTENANCEID   # لا عمود مستقبِل
 SELECT table_name FROM information_schema.tables WHERE table_name LIKE '%NOTIF%';
@@ -331,6 +419,41 @@ SELECT table_name FROM information_schema.tables WHERE table_name LIKE '%NOTIF%'
 ```
 
 (النصّ الكامل في `lab/logs/fanout-h2-dump-condB.txt`؛ مجلّد النسخة أُزيل بعد القراءة.)
+
+**تصحيح صريح بعد المراجعة المستقلة (خطأ في هذه الوثيقة أصلاً):** هذا الملف المحفوظ **لا يحتوي**
+أعداد صفّوف الأحداث ولا توزيعها بالنوع؛ الاستعلام عن `tc_events` في ذلك الأثر **فشل** وأوقف
+`RunScript` عند أول سطر أحداث، والنصّ الحرفي من الأثر (`fanout-h2-dump-condB.txt:18-19`):
+
+```
+SELECT eventid, type, eventtime FROM tc_events ORDER BY eventid;Exception in thread "main"
+org.h2.jdbc.JdbcSQLSyntaxErrorException: Column "EVENTID" not found; SQL statement: [42122-252]
+```
+
+العمود اسمه `ID` لا `EVENTID` (§7 نفسه يذكر أعمدة الجدول أعلاه)، فالفشل من طرفنا لا من الخادم.
+**الأرقام التي كانت مكتوبة هنا (`event_rows = 11` وتوزيع `5/4/1/1`) مسحوبة: لم تكن مخرجات أي أثر
+محفوظ، ولا يجوز الاستشهاد بها.** أُعيد الاستعلام صحيحاً على نسخة من قاعدة الحالة النهائية بعد
+انتهاء الجزء A (قبل أي قياس إضافي)، والمخرجات محفوظة في `lab/logs/fanout-h2-events-final.txt`:
+
+```
+$ cp lab-data/database.mv.db tmp-h2-e/snap.mv.db        # MD5 للطرفين 3cbce2e84ad3088dbfa0a620c70b6f69
+$ java -cp lib/h2-2.5.252.jar org.h2.tools.RunScript -url "jdbc:h2:./tmp-h2-e/snap" -user sa -script tmp-h2-e/q.sql -showResults
+SELECT COUNT(*) AS event_rows FROM tc_events;
+--> 17
+SELECT type, COUNT(*) AS n FROM tc_events GROUP BY type ORDER BY type;
+--> deviceMoving 1 / deviceStopped 1 / geofenceEnter 8 / geofenceExit 7
+```
+
+هذه **حصيلة القاعدة التراكمية لكل تشغيلات الجزء A** — ثمانية تشغيلات، لا حصيلة الحالة B وحدها.
+التوقيتات في نفس الأثر تُنسِب كل صفّوف إلى حالته: `21:45:11` (دخولان: منطقة المدرسة + مسار
+المشي، تشغيل المُهيَّأ) و`21:46:11` `deviceMoving` و`21:46:41` exit (نفس التشغيل) و`21:57:25` +
+`21:58:55` (`deviceStopped` وexit، الحالة A أولى) و`22:02:41` + `22:04:11` (A المُقاسة بمستقبِلَين)
+و`22:10:16` + `22:11:46` (B-1) و`22:22:08` + `22:23:38` (B-3) و`22:26:26` + `22:27:56` (الضابط)
+و`22:31:03` + `22:32:33` (D). **وملاحظة مهمة عن البند (a) في §9:** لا صفّ في القاعدة لتشغيل الحالة
+B-2 كلّه (الدخول `22:17:49` والخروج `22:19:19`) — القوائم أعلاه تقفز من `22:11:46` إلى `22:22:08`.
+السجل والـforward والحوض أثبتوا وقوع الحدث، فالصفّوف ضائعة مع الكتابة عند الإيقاف القسري، لا أن
+الحدث لم يحدث. القياس المعتمد للمستقبِلين يقرأ **سجل الخادم** لا جدول الأحداث، فلا تأثير لهذا
+الضياع على نتيجة §5–§6؛ لكنه دليل إضافي على أن الإيقاف بـ`-Force` يُفقد كتابات، وأن أي بوابة لاحقة
+يجب أن تعتمد القراءة من السجل أو إيقافاً ناعماً.
 
 ---
 
@@ -359,11 +482,16 @@ SELECT table_name FROM information_schema.tables WHERE table_name LIKE '%NOTIF%'
    الخلاصة العملية: هذا شذوذ تحمّل/إغلاق لا علاقة له بالتفرّع، لكنه يُبطل أي قياس بعد إقلاع لم
    يُتحقَّق منه. **العمل المستعمل:** بعد كل إقلاع، أعِِد قراءة السجل والطوبولوجيا بالـAPI (وإن لزم
    أعِد الـPUT) **قبل** القياس — وهو ما فُعِل في §6 (B-2) والضابط. يوصى بإيقاف ناعم بدل `-Force`
-   في بوابات لاحقة.
-2. **تسريب إحداثيات تركيبية إلى geocoder خارجي.** السجل أظهر أن الخادم حلّ عنواناً فعلياً من
-   جغرافيا تركيبية: `Point: …Boulevard Nacera Nounou, Algiers, Algiers, DZ` داخل متن الرسالة، أي
-   أن `geocoder` الافتراضي (nominatim) استُدعي خارجياً. لا يمنع هذا القياس، لكن قبل VPS/الإنتاج
-   يوصى بـ`geocoder.enable=false` أو geocoder محلي — في منتج أمان أطفال هذا تسريب موقع.
+   في بوابات لاحقة. دليل إضافي من §6b: صفّا حدث B-2 فُقدا من `tc_events` (§7) بينما كُتبت كتابات
+   E والضابط وعبرت الإيقاف القسري (`lab/logs/fanout-condE-h2-persistence.txt`) — أي أن الفقد
+   متقطّع لا حتمي، فلا تُعلَّق بوابة على قراءة القرص وحدها.
+2. **تسريب إحداثيات تركيبية إلى geocoder خارجي + زمن تسليم غير محدود.** السجل أظهر أن الخادم حلّ
+   عنواناً فعلياً من جغرافيا تركيبية: `Point: …Boulevard Nacera Nounou, Algiers, Algiers, DZ` داخل
+   متن الرسالة، أي أن `geocoder` الافتراضي (nominatim) استُدعي خارجياً. وقياس §6b أظهر الوجه
+   الثاني لنفس النداء: حين فشل TLS (`SSLHandshakeException`) تأخر سطر اختيار المستقبِلين من `+3ث`
+   إلى `+114ث`. في منتج أمان أطفال هذا **تسريب موقع + إنذار يتأخر بدقائق** معاً؛ قبل VPS/الإنتاج
+   يوصى بـ`geocoder.enable=false` أو geocoder محلي، ويُقاس زمن التسليم بدونه (جزء B / مهمة
+   الاستضافة).
 3. **عيب في Task 5 (§4 أعلاه) — أُصلِح بعد هذا القياس:** `notificators":"telegram,email"` كان لا
    يُطلِق شيئاً على 6.16.0 (المعرّف الصحيح `mail`، و`telegram` خارج `notificator.types` افتراضياً)،
    أي أن «التفرّع لكل الأولياء» لم يكن يعمل كما هُيِّئت البوابة. أُصلِح بـ`LAB_NOTIFICATORS = 'mail'`
@@ -384,24 +512,44 @@ SELECT table_name FROM information_schema.tables WHERE table_name LIKE '%NOTIF%'
 
 ## 10. الاختبارات والتنظيف (أرقام حقيقية)
 
-لم يُمسَّ أي كود تحت `lab/` في هذا الجزء (التعديل الوحيد كان على ملف إعداد **مولَّد** git-ignored،
-§2). أُعيد تشغيل المجموعة للتوثيق، من جذر المستودع وبصيغة الـglob المقتبسة الوحيدة الآمنة:
+**ما مَسَّه هذا الجزء من ملفات مُتبَّعة (git) — لا «لا شيء»:**
+
+| ملف | التغيير |
+|---|---|
+| `lab/report/evidence/005-fanout.md` | هذا الملف (أثر جديد) |
+| `lab/README.md` | فقرة «يثبته»: قرار التفرّع §5–§7 |
+| `lab/traccar/kidguard-lab.template.xml` | `notificator.types = web,mail` و`mail.debug = true` + تعليقين، ثم تعليق الجزء B على `mail.debug` (§9.3، إصلاح R34) |
+| `lab/scripts/bootstrap.mjs` | `export const LAB_NOTIFICATORS = 'mail'` (سطر 13) واستعماله في خطوة التنبيه (سطر 175) بدل `telegram,email` |
+| `lab/tests/api.test.mjs` | حكم الثبات «كل منبِّه يُهيِّئه المعمل يجب أن يكون ضمن `notificator.types`» + منع `telegram` في القالب + مثال حمولة التنبيه صار `web,mail` |
+| `lab/tests/latency.test.mjs` | اختبار التقرير يشير إلى الـfixture المُثبَّت بدل ملف git-ignored (§9.4) |
+| `lab/fixtures/gate-events.ndjson` | ملف جديد: ناقل البوابة مُثبَّت (R33) |
+
+الحالة قبل الجولة الأولى من المراجعة: 86 ناجحاً، موثَّق في أثرَين محفوظَين
+(`lab/logs/fanout-tests-final.txt` و`fanout-tests-summary.txt` — الطرفان يقولان 86/86/0؛ كان يجب
+توثيق هذا الفرق لأن نصّ §9.3 ذكر 87 قبل أن يوجد أثرُها). بعد إصلاحات الجولة (تعليق
+`mail.debug`، منع `telegram`، تصحيح مثال `api.test.mjs`، ثم قياس الحالة E) أُعيد التشغيل كاملاً
+والنصّ الحرفي في `lab/logs/fanout-tests-fixround1.txt`:
 
 ```
 $ node --test "lab/tests/*.test.mjs"
-ℹ tests 86
+ℹ tests 87
 ℹ suites 0
-ℹ pass 86
+ℹ pass 87
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
 ```
 
-(مطابق للأساس 86/86/0؛ النصّ في `lab/logs/fanout-tests-summary.txt`. أُعيد بعد استعادة
-`lab/artifacts/events.ndjson` إلى محتوى البوابة لأن §9.4.)
+**الحكم الجديد مُثبت بالتغيير (لا مجرد تشغيل أخضر):** بإضافة `telegram` إلى `notificator.types` في
+القالب فقط: `tests 23 / pass 22 / fail 1` بالنصّ «the lab template must keep telegram out of
+notificator.types…»، ثم رُجِّع القالب وتَحقَّق السطر 23 منه: `<entry key='notificator.types'>web,mail</entry>`،
+وأعاد `npm run lab:check` قوله: `config ok: …\kidguard-lab.template.xml`.
 
-الإيقاف والتحقّق:
+**CI هذه الجولة: NOT RUN — CI unavailable (account billing)** — لا دفعة GitHub مُشغَّلة؛ كل أرقام
+الاختبارات أعلاه محلية من هذا الجهاز (R14).
+
+الإيقاف والتحقّق — مرة بعد قياس §5–§8 ومرة بعد قياس §6b؛ النصّ الحرفي للإيقاف الأخير:
 
 ```
 $ netstat -ano | grep -E ':(8082|5055|5199)' | grep LISTENING || echo "ALL LAB PORTS CLOSED (8082/5055/5199)"
@@ -410,9 +558,21 @@ $ powershell -NoProfile -Command "(Get-Process java -ErrorAction SilentlyContinu
 0
 ```
 
-وأُزيل مجلّد النسخة `lab/traccar/tmp-h2`. الأثر المُستقبَل للقياس (كلّه git-ignored):
-`lab/traccar/fanout-boot-{A,A2,B,C}.log`, `lab/traccar/fanout.env`, `lab/traccar/kidguard-lab.xml`,
-`lab/artifacts/events-fanout-2026-10-06.ndjson`, و`lab/logs/fanout-*.txt`.
+وناقل البوابة رُجِّع إلى حالة البوابة بعد تشغيل §6b أيضاً: الحوض يكتب في
+`lab/artifacts/events.ndjson`، فأضاف سجلا الحالة E (دخول `eventId=99` وخروج `eventId=100`) وصار
+الملف بـMD5 `7ff428094847a30f071a2006fe1d79cb`؛ نُقل السجلّان جانباً إلى
+`lab/artifacts/events-condE-2026-10-06.ndjson` (نصّهما في `lab/logs/fanout-condE-sink-records.txt`،
+وفيه أيضاً أن تشغيل E الأول لم يبلغ الحوض أصلاً: سطر `Event forwarding failed` مرتين في
+`fanout-boot-E.log`)، ثم رُجِّع الناقل من `lab/fixtures/gate-events.ndjson` حتى طابقه بالـMD5
+`8c9bc25076c3ebb69eae8a8bbd88a760`. وقراءة H2 على نسخة بعد الإيقاف
+(`lab/logs/fanout-condE-h2-persistence.txt`) تُظهر أن الطوبولوجيا المستعادة كُتبت على القرص
+(`tc_user_device`: `1 1` و`2 1`) وأن الأحداث نما من 17 إلى 21 صفاً — فالإيقاف القسري هذه المرة **لم**
+يُفقد كتابات، ولا نقطع بأن فقد B-2 كان من الإيقاف وحده؛ يبقى بند §9.1 مفتوحاً على إيقاف ناعم.
+
+وأُزيل مجلّدا النسخة `lab/traccar/tmp-h2` و`tmp-h2-e`. بقية الأثر (كلّه git-ignored):
+`lab/traccar/fanout-boot-{A,A2,B,C,E}.log`, `lab/traccar/fanout.env`, `lab/traccar/kidguard-lab.xml`,
+`lab/artifacts/events-fanout-2026-10-06.ndjson`, `lab/artifacts/events-condE-2026-10-06.ndjson`,
+و`lab/logs/fanout-*.txt`.
 
 ---
 
@@ -422,4 +582,12 @@ $ powershell -NoProfile -Command "(Get-Process java -ErrorAction SilentlyContinu
   الولي الثاني (3 قياسات متكررة، إحداها بعد إقلاع)، وعاد بمعاودة الرابط (ضابط في نفس JVM).
 - الحدث `geofenceExit` واحد اختار **وليَّين** في الحالة A وسجّلهما الخادم في الثانية نفسها `22:04:14`.
 - `device->notification` لازم أيضاً (`always:false`): بدونه `notifications: 0` ولا أي مستقبِل.
-- التسليم الحقيقي (تيليجرام/بريد/لقطات/توازي/push) = **NOT RUN** بانتظار بيانات المالك.
+- **الاتجاه المعكوس مقاس أيضاً** (§6b، بعد مراجعة مستقلة وجدت أن هذا النصف كان استنتاجاً من كود
+  `CacheManager` وحده): تصريح `Notification` بلا مشاركة جهاز ⇒ `{u:1}` وحده، وضابط في نفس JVM
+  أعاد `{u:1,u:2}` برابط واحد. فعبارة «لا شيء من الرابطَين يكفي وحده» الآن مقاسة لا مقروءة.
+- **زمن تسليم الإنذار معطَّل على الجيرجودر**: نفس المسار أعطى `+3–4ث` عندما تُرجِع nominatim
+  عنواناً، و`+114ث` عندما تعذّر TLS — مع تسريب العنوان المُحلّ من إحداثيات تركيبية داخل متن
+  الرسالة. `geocoder.enable=false` أو جيرجودر محلي قبل أي تشغيل حقيقي، ويقاس الزمان بدونه في
+  الجزء B.
+- التسليم الحقيقي (تيليجرام/بريد/لقطات/توازي/push) = **NOT RUN** بانتظار بيانات المالك،
+  وCI لهذه الجولة = **NOT RUN — CI unavailable (account billing)**.

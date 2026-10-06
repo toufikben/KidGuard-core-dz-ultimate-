@@ -41,9 +41,11 @@ test('route geofence payload is a LINESTRING with a polylineDistance buffer', ()
 });
 
 test('notification payload carries type + channels only, never a device or owner id', () => {
+  // ids must be resolvable ones (R34): this builder is a pass-through, so it is not the place
+  // that validates them — the invariant test at the end of this file is.
   assert.deepEqual(
-    buildNotificationPayload({ type: 'geofenceExit', notificators: 'telegram,email' }),
-    { type: 'geofenceExit', notificators: 'telegram,email', always: false });
+    buildNotificationPayload({ type: 'geofenceExit', notificators: 'web,mail' }),
+    { type: 'geofenceExit', notificators: 'web,mail', always: false });
 });
 
 test('permission payload is an ordered two-key id map with no type field', () => {
@@ -381,4 +383,7 @@ test('every notificator the lab provisions is one the server is configured to re
   }
   assert.ok(!/\bemail\b/.test(LAB_NOTIFICATORS),
     'Traccar 6.16.0 has no "email" notificator id; the mail notifier registers as "mail"');
+  assert.ok(!types.includes('telegram'),
+    'the lab template must keep telegram out of notificator.types: a lab run would otherwise dial '
+    + 'api.telegram.org with the placeholder token, and real delivery belongs to Task 8 Part B');
 });

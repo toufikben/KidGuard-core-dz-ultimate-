@@ -27,7 +27,10 @@
 
     <entry key='mail.smtp.host'></entry>
     <!-- true => Traccar swaps SmtpMailManager for LogMailManager: one INFO line per recipient and
-         no SMTP socket, so fan-out is observable with no real mail account (evidence 005 §3). -->
+         no SMTP socket, so fan-out is observable with no real mail account (evidence 005 §3).
+         FLIP THIS TO false BEFORE ANY REAL-DELIVERY TEST (Task 8 Part B): while it is true the
+         server logs "Email sent / To:" for every recipient it selected and delivers nothing, so
+         that line alone can never prove a message arrived — it is a ready-made false PASS. -->
     <entry key='mail.debug'>true</entry>
 
     <entry key='logger.console'>true</entry>
