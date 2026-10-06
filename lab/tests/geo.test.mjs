@@ -23,3 +23,8 @@ test('route zones are LINESTRING with a polylineDistance buffer', () => {
 test('haversine distance is metres and sane at 0.001 deg latitude', () => {
   assert.ok(Math.abs(distanceMeters(36.7538, 3.0588, 36.7548, 3.0588) - 111.2) < 2);
 });
+
+test('haversine distance is sane at 0.001 deg longitude (cos-lat axis)', () => {
+  // خط الطول يتقلّص بعامل cos(العرض): 111.195 × cos 36.75° ≈ 89.09 م لكل 0.001°؛ بدون هذه الحالة لا يشارك cos(lat) في الاختبار فيمرّ أي تبديل lat/lon أو نصف قطر خاطئ على محور الطول
+  assert.ok(Math.abs(distanceMeters(36.7538, 3.0588, 36.7538, 3.0598) - 89.1) < 2);
+});

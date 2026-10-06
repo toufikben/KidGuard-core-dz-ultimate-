@@ -12,7 +12,8 @@ export function validateScenario(scenario, knownTypes) {
     if (!(reading.offsetSec > previous)) errors.push(`reading ${index}: offsetSec must increase`);
     previous = reading.offsetSec;
     if (!Number.isFinite(reading.lat) || !Number.isFinite(reading.lon)) errors.push(`reading ${index}: lat/lon`);
-    if (!(reading.accuracy >= 0)) errors.push(`reading ${index}: accuracy required`);
+    // عدد منتهٍ وغير سالب: null يتجاوز null>=0 في JS فيبتلع قياساً مفقوداً في أداة أمان أطفال
+    if (!(Number.isFinite(reading.accuracy) && reading.accuracy >= 0)) errors.push(`reading ${index}: accuracy required`);
   }
   if (scenario.zone?.type === 'circle') {
     try { parseCircle(circleArea(scenario.zone.lat, scenario.zone.lon, scenario.zone.radiusMeters)); }
