@@ -10,6 +10,8 @@ import { ProtectionStateService } from '../src/services/ProtectionStateService';
 import { PairingService } from '../src/services/PairingService';
 import { privacyDataService } from '../src/services/PrivacyDataService';
 import { GpsFreshnessService } from '../src/services/GpsFreshnessService';
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -278,5 +280,22 @@ assert(queue.getAllEvents().some((event) => event.id === queuedEvent.id && event
   assert(privacyExport.data.kidguard_alert_history !== undefined, 'Privacy export must include non-secret local history');
   privacyDataService.deleteLocalData();
   assert(privacyDataService.getManagedStorageKeys().every((key) => localStorage.getItem(key) === null), 'Delete local data must remove every managed key');
+
+// App-runner floor, enforced where it is always executed. A test inside tests/app/ cannot
+// police its own collection: when the glob matches nothing the runner prints `tests 0` and
+// exits 0, so the guard file is never run. npm test is the local gate that always runs.
+// The floor number lives in ONE place — the CI workflow — and is read from there, never copied.
+const workflow = readFileSync(new URL('../.github/workflows/m1-ci.yml', import.meta.url), 'utf8');
+const floorMatch = workflow.match(/Run app tests with a measured count floor[\s\S]*?EXPECTED_MIN_TESTS: '(\d+)'/);
+assert(floorMatch !== null, 'm1-ci.yml lost the app count floor step');
+const floor = Number(floorMatch![1]);
+
+const run = spawnSync('npm', ['run', 'test:app', '--silent'], { encoding: 'utf8', shell: true });
+const counted = /ℹ tests (\d+)/.exec(run.stdout);
+const failed = /ℹ fail (\d+)/.exec(run.stdout);
+assert(counted !== null && failed !== null, `app runner printed no summary: ${run.stdout.slice(-400)}`);
+console.log(`app floor check: tests ${counted[1]} >= ${floor}, fail ${failed[1]}`);
+assert(Number(counted[1]) >= floor, `app tests de-collected or shrank: ${counted[1]} < ${floor}`);
+assert(Number(failed[1]) === 0, `app runner reports ${failed[1]} failures`);
 
 console.log('core unit tests passed');
