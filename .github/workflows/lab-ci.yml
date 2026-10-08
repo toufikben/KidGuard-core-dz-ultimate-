@@ -35,11 +35,22 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
-      - name: Fail if no lab tests exist
-        run: test -n "$(ls lab/tests/*.test.mjs 2>/dev/null)"
-
-      - name: Run lab tests
-        run: npm run test:lab
+      # Reviewer C (final review) measured that a *.test.mjs file containing no test() still makes
+      # Node print `tests 1 / pass 1 / fail 0` and exit 0, so the old filename guard AND a `>= 1`
+      # count both go green on one stub file (I reproduced that here: one empty test file reported
+      # `tests 1`, gate exit 0). The gate is therefore a floor on the reported count, set from the
+      # measured suite size on 2026-10-08 (`npm run test:lab` -> tests 94). Dropping below it is a
+      # deliberate act: raise the floor in the same commit, or the run goes red.
+      # pipefail is what stops `tee` from swallowing a failing suite behind a 0 exit.
+      - name: Run lab tests and enforce the measured test-count floor
+        env:
+          EXPECTED_MIN_TESTS: "94"
+        run: |
+          set -o pipefail
+          npm run test:lab 2>&1 | tee lab-tests.log
+          awk -v min="$EXPECTED_MIN_TESTS" '$2 == "tests" { n = $3 + 0 }
+            END { if (n < min) { printf "only %d tests reported, floor is %s\n", n, min; exit 1 } }' lab-tests.log
+        shell: bash
 
       - name: Validate lab config template
         run: npm run lab:check

@@ -6,6 +6,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { postPosition, sendSchedule } from './post-position.mjs';
+import { KNOWN_EVENT_TYPES, validateScenario } from './scenario-lib.mjs';
 
 // Puts are paced by deadlines (ruling R29), not by after-post relative sleeps: reading i is posted
 // when its deadline arrives and stamped with the whole-second wall clock of that same deadline, so
@@ -24,6 +25,12 @@ export async function replayScenario({
 }) {
   const scenario = JSON.parse(await readFileFn(
     new URL(`../scenarios/${String(name).replace(/\.json$/, '')}.json`, import.meta.url), 'utf8'));
+  // The suite checks these files, but a hand-edited scenario used to reach the wire unchecked —
+  // and a gate run that posts a malformed corpus measures nothing. Fail before the first post.
+  const shapeErrors = validateScenario(scenario, KNOWN_EVENT_TYPES);
+  if (shapeErrors.length > 0) {
+    throw new Error(`scenario ${name} is not valid: ${shapeErrors.join('; ')}`);
+  }
   const uniqueId = env.LAB_DEVICE_UNIQUE_ID ?? 'lab-child-1';
   const host = env.LAB_OSMAND_HOST ?? '127.0.0.1';
   const port = Number(env.LAB_OSMAND_PORT ?? 5055);

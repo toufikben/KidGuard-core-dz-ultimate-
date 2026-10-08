@@ -1,5 +1,10 @@
 import { circleArea, parseCircle } from '../sink/lib/geo.mjs';
 
+// Traccar's event types (EventType in notifications/NotificatorDefaults.java). Single source for
+// both the suite and the live replay, so a scenario can name an event that no gate can measure.
+export const KNOWN_EVENT_TYPES = ['geofenceExit', 'geofenceEnter', 'alarm', 'deviceOffline',
+  'deviceOverspeed', 'unaccompaniedMotion', 'deviceMoving', 'deviceStopped'];
+
 export function validateScenario(scenario, knownTypes) {
   const errors = [];
   if (!scenario.name) errors.push('name is required');
@@ -25,17 +30,4 @@ export function validateScenario(scenario, knownTypes) {
     errors.push('zone must be circle or polyline');
   }
   return errors;
-}
-
-export function toOsmAndParams(uniqueId, reading, absoluteTimeSec) {
-  return [
-    ['id', uniqueId],
-    ['valid', 'true'],
-    ['timestamp', String(Math.floor(absoluteTimeSec))],
-    ['lat', reading.lat],
-    ['lon', reading.lon],
-    ['accuracy', reading.accuracy],
-    ['speed', reading.speedKnots],
-    ['bearing', reading.course ?? 0],
-  ];
 }

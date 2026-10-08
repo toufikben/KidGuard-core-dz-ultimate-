@@ -89,3 +89,38 @@ test('Fix2: render does not silently emit an empty value for a present-but-blank
   const badEnv = { ...env, LAB_SINK_HOST: '' };
   assert.throws(() => renderConfig(template, badEnv), /missing env:/);
 });
+
+// Reviewer A (final review) found the checker enforced neither of the two facts the M0 evidence
+// measured. The geocoder one is worse than a missing lint rule: lab/traccar/kidguard-lab.xml is
+// git-ignored and regenerated from this template by `npm run lab:render`, so a fix that lives
+// only in the rendered file is dropped by the next run — and 005-fanout.md §6b measured that the
+// enabled geocoder stalls delivery and leaks a resolved address built from the coordinates.
+test('the template carries geocoder.enable=false so a re-render cannot drop it', () => {
+  assert.match(renderConfig(template, env), /<entry key='geocoder\.enable'>false<\/entry>/);
+});
+
+test('validation rejects a lab config that enables the geocoder', () => {
+  const bad = template.replace(
+    "<entry key='geocoder.enable'>false</entry>",
+    "<entry key='geocoder.enable'>true</entry>");
+  assert.notEqual(bad, template, 'the template must carry a geocoder.enable entry to flip');
+  const { errors } = validateConfig(bad, { allowPlaceholders: true });
+  assert.ok(errors.some((e) => e.includes('geocoder.enable')), errors.join('\n'));
+});
+
+// notificator.types=web,mail is what keeps api.telegram.org unreachable from any lab run;
+// the fake token entries stay only to prove the placeholder path, so the list itself is the gate.
+test('validation rejects telegram in notificator.types', () => {
+  const bad = template.replace(
+    "<entry key='notificator.types'>web,mail</entry>",
+    "<entry key='notificator.types'>web,mail,telegram</entry>");
+  assert.notEqual(bad, template);
+  const { errors } = validateConfig(bad, { allowPlaceholders: true });
+  assert.ok(errors.some((e) => e.includes('notificator.types')), errors.join('\n'));
+});
+
+test('validation rejects a lab config with no geocoder.enable at all', () => {
+  const bad = template.replace(/<entry key='geocoder\.enable'>[^<]*<\/entry>\n?/, '');
+  const { errors } = validateConfig(bad, { allowPlaceholders: true });
+  assert.ok(errors.some((e) => e.includes('geocoder.enable')), errors.join('\n'));
+});

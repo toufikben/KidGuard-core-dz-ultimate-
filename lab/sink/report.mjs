@@ -19,6 +19,12 @@ export function toMarkdown(summary) {
   const unmeasured = Object.entries(summary.byType)
     .filter(([, m]) => m.transportP95Ms === null)
     .map(([type]) => type);
+  // The budget is declared over summary.coverage.expected, so PASS is only earned by those
+  // types: a type that arrived with no fix time, or never arrived at all, has no measurement
+  // to check. Types outside the expected list are still named in the table, but they are
+  // observations, not the gate.
+  const unmeasuredExpected = summary.coverage.expected
+    .filter((type) => !Number.isFinite(summary.byType[type]?.transportP95Ms));
   // An age over budget while transport is inside it is a fact about Traccar's reference
   // timestamps, so it is printed and explained instead of being dropped or clamped.
   const ageNotes = Object.entries(summary.byType)
@@ -42,6 +48,12 @@ export function toMarkdown(summary) {
     verdict = `INVALID clock skew: ${summary.clockSkew.count} of ${summary.total} records have`
       + ` a non-positive source->sink latency (min source->sink latency`
       + ` ${summary.clockSkew.minTransportLatencyMs} ms) -- p95 not trustworthy`;
+  } else if (unmeasuredExpected.length > 0) {
+    // Reviewer A (final review): `.every()` over the finite percentiles alone let a batch
+    // where the budgeted event never produced a measurement read as PASS. For a child-safety
+    // report the safety event has to earn the verdict itself.
+    verdict = `NO DATA p95 not measured for: ${unmeasuredExpected.join(', ')}`
+      + ` (budgeted types: ${summary.coverage.expected.join(', ')})`;
   } else if (finiteP95.every((v) => v <= TARGET_P95_MS)) {
     verdict = `PASS p95 <= ${TARGET_P95_MS} ms (source->sink)`;
   } else {

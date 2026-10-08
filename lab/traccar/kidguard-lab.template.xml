@@ -33,6 +33,13 @@
          that line alone can never prove a message arrived — it is a ready-made false PASS. -->
     <entry key='mail.debug'>true</entry>
 
+    <!-- Measured (evidence 005 §6b, spec §9.12): delivery calls the geocoder synchronously and it
+         answers with an address resolved from the coordinates — even a synthetic lab one — turning a
+         ~3 s delivery into ~114 s. It lives in the TEMPLATE, not only in the generated file, because
+         `npm run lab:render` overwrites kidguard-lab.xml and would drop the fix silently. Production
+         re-decides this; check-config rejects true so no lab run can reintroduce the leak. -->
+    <entry key='geocoder.enable'>false</entry>
+
     <entry key='logger.console'>true</entry>
     <entry key='logger.fullStackTraces'>true</entry>
 

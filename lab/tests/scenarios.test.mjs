@@ -14,6 +14,28 @@ for (const file of await readdir(new URL('../scenarios/', import.meta.url))) {
   });
 }
 
+// Reviewer A (final review): the shape check lived only in this test file, so the live replay
+// could post a scenario that the suite would have rejected. The gate run is the thing that must
+// be checked, and it must fail before a single position reaches the wire.
+test('replayScenario refuses a malformed scenario before posting anything', async () => {
+  const { replayScenario } = await import('../scripts/scenario.mjs');
+  const bad = {
+    name: 'malformed',
+    expectEvent: 'notAnEvent',
+    zone: { type: 'circle', lat: 36.7538, lon: 3.0588, radiusMeters: 100 },
+    readings: [{ offsetSec: 0, lat: 36.7538, lon: 3.0588, accuracy: 12, speedKnots: 0 }],
+  };
+  const posts = [];
+  await assert.rejects(
+    replayScenario({
+      name: 'malformed', speed: 1, log: () => {},
+      readFileFn: async () => JSON.stringify(bad),
+      post: async (p) => { posts.push(p); },
+    }),
+    /notAnEvent/);
+  assert.deepEqual(posts, [], 'a scenario that failed validation may post nothing');
+});
+
 test('school-exit really leaves the circle', async () => {
   const scenario = JSON.parse(await readFile(
     new URL('../scenarios/school-exit.json', import.meta.url), 'utf8'));

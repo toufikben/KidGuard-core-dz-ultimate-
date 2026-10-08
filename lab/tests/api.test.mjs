@@ -10,11 +10,15 @@ import {
 } from '../scripts/api.mjs';
 import * as bootstrap from '../scripts/bootstrap.mjs';
 
-test('admin payload never carries a real child name', () => {
+// Reviewer A (final review): the old title promised "never carries a real child name" while the
+// body only compared key names. A key-set check cannot see a value, so the claim is now split:
+// the keys are exactly the three admin fields, and the only name in the payload is the one passed in.
+test('admin payload has exactly the three admin fields and carries only the name it was given', () => {
   const payload = buildUserPayload({ name: 'lab-admin', email: 'lab@example.com', password: 'secret' });
-  // The exact key SET must be {name,email,password}: no `administrator`, no real child name.
-  // (The actual side is .sort()-ed, so the expected literal must be sorted too to compare sets.)
   assert.deepEqual(Object.keys(payload).sort(), ['email', 'name', 'password']);
+  assert.equal(payload.name, 'lab-admin');
+  assert.ok(!Object.values(payload).some((v) => String(v).includes('lab-child')),
+    'no admin field may carry a device/child name');
 });
 
 test('device payload uses uniqueId as the stable key', () => {
@@ -291,10 +295,12 @@ test('replayScenario awaits each deadline before posting, so no live post is sta
   const { replayScenario } = await import('../scripts/scenario.mjs');
   const scenario = {
     name: 'fake', expectEvent: 'geofenceExit',
+    zone: { type: 'circle', lat: 36.7538, lon: 3.0588, radiusMeters: 100 },
     readings: [
       { offsetSec: 0, lat: 36.7538, lon: 3.0588, accuracy: 12, speedKnots: 0 },
       { offsetSec: 30, lat: 36.75395, lon: 3.0589, accuracy: 12, speedKnots: 1.2 },
       { offsetSec: 60, lat: 36.7541, lon: 3.059, accuracy: 15, speedKnots: 1.8 },
+      { offsetSec: 90, lat: 36.75425, lon: 3.0591, accuracy: 15, speedKnots: 2.1 },
     ],
   };
   let nowMs = 1_791_446_400_000;
@@ -316,21 +322,21 @@ test('replayScenario awaits each deadline before posting, so no live post is sta
     },
   });
 
-  // The pacing must come from the injected clock: at speed 1 the gaps are exactly 0/30 s/30 s.
+  // The pacing must come from the injected clock: at speed 1 the gaps are exactly 0/30 s/30 s/30 s.
   // A loop that waited on the real Date.now() would ask for 0 ms here (its deadlines are in the
   // past for an injected clock), which is how a future-stamped position would reach the wire.
   assert.deepEqual(timeline,
     ['wait:0', `post:${1_791_446_400}`, 'wait:30000', `post:${1_791_446_430}`,
-     'wait:30000', `post:${1_791_446_460}`],
+     'wait:30000', `post:${1_791_446_460}`, 'wait:30000', `post:${1_791_446_490}`],
     'every reading must be awaited to its deadline, on the injected clock, before it is posted');
   assert.deepEqual(posted.map((p) => p.absoluteTimeSec),
-    [1_791_446_400, 1_791_446_430, 1_791_446_460]);
+    [1_791_446_400, 1_791_446_430, 1_791_446_460, 1_791_446_490]);
   for (const p of posted) {
     assert.ok(p.absoluteTimeSec <= p.sendSec,
       `reading at offset ${p.offsetSec}s was stamped ${p.absoluteTimeSec}, sent at ${p.sendSec}`);
   }
   assert.deepEqual(posted.map((p) => [p.host, p.port, p.uniqueId]),
-    [['10.0.0.5', 5056, 'lab-child-9'], ['10.0.0.5', 5056, 'lab-child-9'], ['10.0.0.5', 5056, 'lab-child-9']]);
+    Array.from({ length: 4 }, () => ['10.0.0.5', 5056, 'lab-child-9']));
 });
 
 // A reading with a missing coordinate must fail loudly, not serialise the string "undefined"

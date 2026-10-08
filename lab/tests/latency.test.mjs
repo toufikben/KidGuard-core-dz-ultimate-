@@ -90,6 +90,32 @@ test('the report names the types the budget was never measured for', async () =>
   assert.match(md, /budget not measured for: deviceOffline/);
 });
 
+// A PASS must be earned by the type the budget names, not by whatever else happened to arrive.
+// Both readings below printed `verdict: PASS` while the batch carried no measurement for
+// geofenceExit: the first has the type present with no fix time, the second has it absent.
+const timed = (transportLatencyMs) => ({
+  eventType: 'deviceMoving', transportLatencyMs, forwardLatencyMs: 1_500,
+  ingestLatencyMs: 20, latitude: 36.7538,
+});
+
+test('PASS is withheld when a budgeted type arrived without a transport measurement', async () => {
+  const { toMarkdown } = await import('../sink/report.mjs');
+  const md = toMarkdown(summarize(
+    [{ eventType: 'geofenceExit', transportLatencyMs: null, latitude: null }, timed(1_200)],
+    ['geofenceExit']));
+  assert.match(md, /budget not measured for: geofenceExit/);
+  assert.doesNotMatch(md, /verdict: PASS/);
+  assert.match(md, /verdict: NO DATA p95 not measured for: geofenceExit/);
+});
+
+test('PASS is withheld when a budgeted type never arrived at all', async () => {
+  const { toMarkdown } = await import('../sink/report.mjs');
+  const md = toMarkdown(summarize([timed(1_200)], ['geofenceExit', 'deviceMoving']));
+  assert.match(md, /missing expected types: geofenceExit/);
+  assert.doesNotMatch(md, /verdict: PASS/);
+  assert.match(md, /verdict: NO DATA p95 not measured for: geofenceExit/);
+});
+
 // R30 with R19 kept whole: the inflated age stays visible and explained, unclamped.
 test('an event age above the budget is shown and explained, not read as transport', async () => {
   const { toMarkdown } = await import('../sink/report.mjs');

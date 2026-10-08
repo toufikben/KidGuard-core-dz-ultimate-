@@ -10,6 +10,20 @@ const RULES = {
   'web.port': (v) => v === '8082' || 'expected 8082',
   'protocols.enable': (v) => v === 'gt06,owntracks,osmand' || 'expected gt06,owntracks,osmand',
   'database.registerUnknown': (v) => v === 'false' || 'whitelist required (spec 9.6)',
+  // Both rules below guard a fact the M0 evidence measured, not a style preference:
+  // telegram in the channel list would let a lab run open a socket to api.telegram.org, and an
+  // enabled geocoder blocks delivery and returns an address resolved from the coordinates
+  // (spec §9.12, evidence 005 §6b).
+  'notificator.types': (v) => {
+    const types = v.split(',').map((t) => t.trim()).filter(Boolean);
+    if (types.length === 0) return 'the lab must name at least one notification channel';
+    if (types.includes('telegram')) {
+      return 'telegram must stay out of the list: it would dial api.telegram.org with the lab token';
+    }
+    return true;
+  },
+  'geocoder.enable': (v) => v === 'false'
+    || 'must be false in the lab (delivery blocks on it and leaks an address resolved from the coordinates)',
   'event.forward.url': (v) => /^http:\/\/(127\.0\.0\.1|\$\{LAB_SINK_HOST\}|localhost):\$\{LAB_FORWARD_PORT\}\/alert$|^http:\/\/(127\.0\.0\.1|localhost|\d{1,3}(\.\d{1,3}){3}):\d+\/alert$/.test(v)
     || 'must POST to the lab sink on http://<host>:<port>/alert',
   'event.forward.header': (v) => {
