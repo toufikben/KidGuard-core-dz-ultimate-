@@ -59,11 +59,20 @@ LAB_DEVICE_UNIQUE_ID=lab-child-1 LAB_OSMAND_HOST=127.0.0.1 LAB_OSMAND_PORT=5055 
 ```bash
 npm run lab:report -- lab/artifacts/events.ndjson geofenceExit,deviceMoving
 ```
+لا تُشغّل `npm run lab:report` بلا وسائط على جهازٍ فيه أثر البوابة: بدون وسيط يقرأ الأمر
+`lab/artifacts/events.ndjson` (محليّ، غير متتبَّع) ويستخدم أنواع الأحداث الافتراضية
+`geofenceExit,alarm,deviceOffline` — ونوعان منها لم يُولّدهما المعمل أصلاً، فيكون الحكم
+`NO DATA p95 not measured for: alarm, deviceOffline` لا `PASS`. الوسائط أعلاه هي أمر البوابة المعتمد.
+لإعادة إنتاج نصّ البوابة من المستودع وحده:
+`npm run lab:report -- lab/fixtures/gate-events.ndjson geofenceExit,deviceMoving`.
 
 النتيجة المقاسة (انظر `lab/report/evidence/003-scenario-run.txt`):
-- **بوابة M0 مُنجزة:** `events.ndjson` يحوي أسطراً حقيقية `eventType":"geofenceExit"` مصدرها خادم
-  عامل. **كلا المنطقتين خرجت منهما**: `school` (دائرة CIRCLE) **و**`walk-to-park` (خط `LINESTRING`)
-  — برهان أن منطقة المسار تُقيَّم فعلاً، لا الدوائر وحدها.
+- **بوابة §14 — مُثبتة على المسار، مفتوحة على المصدر:** `events.ndjson` يحوي أسطراً حقيقية
+  `eventType":"geofenceExit"` مصدرها خادم عامل. **كلا المنطقتين خرجت منهما**: `school` (دائرة CIRCLE)
+  **و**`walk-to-park` (خط `LINESTRING`) — برهان أن منطقة المسار تُقيَّم فعلاً، لا الدوائر وحدها.
+  لكنّ المواضع حُقنت يدويّاً، فلا GPS ولا شريحة حقيقيّين في هذه الجولة: **المسار مُثبت والمصدر غير
+  مُثبت** (فجوة مسماة لـM1 بقرار المالك R35). لهذا **لا كود إنتاج قبل إغلاق §14 أو قرار صريح من
+  المالك بتضييقها** — لا يُقرأ هذا القسم إذنًا ببدء M1.
 - `geofenceExit`: 4 أسطر، `p95 source->sink = 3172ms` و`p95 ingest = 29ms` — حدث الاختطاف سريع وضمن الميزانية.
 - **0 سجلّ منحرف الساعة** (الإصلاح R29 يعمل: لا طابع زمنى يسبق لحظة الإرسال، فصيغت المواضع بجدول
   مواعيد `sendSchedule` يعتمد على deadline لكل قراءة بدل نوم نسبي بعد الإرسال).
@@ -129,9 +138,11 @@ wc -l lab/artifacts/events.ndjson
 npm run lab:report -- lab/artifacts/events.ndjson geofenceExit,deviceMoving
 ```
 
-**الجيرجودر:** القالب لا يعطّل `geocoder`؛ أضِف `<entry key='geocoder.enable'>false</entry>` إلى
-المُولَّد `lab/traccar/kidguard-lab.xml` (git-ignored) قبل التشغيل — الدليل: `/api/server` يقرأ
-`geocoderEnabled:false` ولا نداء nominatim في السجل (تسريب العنوان موثّق في `005-fanout.md` §9.2).
+**الجيرجودر:** معطّل في **القالب** (`kidguard-lab.template.xml`) بسطر `geocoder.enable=false`، و
+`check-config.mjs` يرفض أي قيمة أخرى أو أي غياب للسّطر، فلا يمكن لـ`npm run lab:render` أن يُسقِط
+الحماية بصمت (كانت في المولَّد فقط، والمولَّد يُكتَب فوقه في كل توليد — وهذا كان الخلل). الدليل على
+التعطيل: `/api/server` يقرأ `geocoderEnabled:false` ولا نداء nominatim في السجل (تسريب العنوان
+موثّق في `005-fanout.md` §9.2). لا يُضاف هذا السطر يدويّاً إلى أي إعداد إنتاج؛ هو قرار معمل مُقيَّس.
 
 **التنظيف (إلزامي، بمخرجات ملصقة في الدليل):**
 
@@ -151,12 +162,27 @@ JDK 25 وأجاب HTTP 200. java في PATH على جهاز التطوير هو T
 Java 21)، لذلك يفتحه run.sh عبر JDK 25 المثبّت محلياً.
 
 ```bash
-mkdir -p lab/traccar/download && cd lab/traccar/download
-curl -fsSLO https://github.com/traccar/traccar/releases/download/v6.16.0/traccar-other-6.16.0.zip
-sha256sum traccar-other-6.16.0.zip | tee traccar-other-6.16.0.zip.sha256
-unzip -q traccar-other-6.16.0.zip
-ls traccar-other-6.16.0/tracker-server.jar   # إلى جانب conf/ و lib/
+mkdir -p lab/traccar
+curl -fsSL -o lab/traccar/traccar-other-6.16.0.zip \
+  https://github.com/traccar/traccar/releases/download/v6.16.0/traccar-other-6.16.0.zip
+# القيمة المثبّتة المقاسة في هذا الفرع (الدليل 001-download.txt) — أوقف إن اختلفت:
+#   حجم   166413827 بايت
+#   sha256 87be9347090248747cf31ff00a554d59c28e50d1d41d1f68f7f16957976bde55
+wc -c lab/traccar/traccar-other-6.16.0.zip
+sha256sum lab/traccar/traccar-other-6.16.0.zip
+# الأرشيف مُسطَّح: tracker-server.jar و conf/ و lib/ في جذر الأرشيف بلا مجلد باسم النسخة،
+# لذلك يُفرَد مباشرة داخل lab/traccar/ ولا يُفرَد في مجلد download/:
+unzip -q lab/traccar/traccar-other-6.16.0.zip -d lab/traccar
+ls lab/traccar/tracker-server.jar   # المتوقع: يوجد (4210543 بايت عند هذا التثبيت)
 ```
 
-يلصق الناتج (بما فيه SHA-256) في lab/report/evidence/001-download.txt. إن اختلف اسم
-الجذر المحدَّد، حدّث LAB_TRACCAR_DIR في run.sh ولا تغيّر أمر التشغيل.
+يلصق الناتج (بما فيه SHA-256) في lab/report/evidence/001-download.txt. لا يغيَّر أمر التشغيل ولا
+`LAB_TRACCAR_DIR`: `run.sh` يفحص الشجرة بنفسها ويتحقّق من `tracker-server.jar` قبل `cd`، فيردّ رسالة
+مسماة إن وُضعت الشجرة في مكان آخر أو إن كان `LAB_JAVA_BIN` غير صالح.
+
+**ملفات محليّة لا تُتبَّع (git-ignored):** `lab/artifacts/*` (ومنها `events.ndjson` الذي يكتبه الحوض
+ولقطات الشاشة)، `lab/logs/*` (سجلّات قياسات الجهاز وجولة الـCI)، `lab/traccar/kidguard-lab.xml`
+المُولَّد، وقاعدة `lab/traccar/lab-data/` وشجرة Traccar المُفرَدة. فلا تُحال أي نتيجة إلى هذه المسارات
+وحدها: النظير المتتبَّع لأثر البوابة هو `lab/fixtures/gate-events.ndjson` (أسطر البوابة العشرة نفسها،
+`md5 8c9bc250…` للطرفين)، وما لا نظيرَ له (كسجلّ `gh run list`) يُذكَر كأثر محليّ يُعاد قياسه
+بأمر `gh` مسمّى، لا كمصدر معتمَد داخل المستودع.

@@ -3,7 +3,7 @@
 ورقة A4 واحدة: «ماذا يثبت المنتج حتى الآن». الأرقام كلها مقاسة على معمل هذا الجهاز (Traccar 6.16.0،
 JDK 25، H2)؛ ما لم يُقَس موسوم **NOT RUN** ولا يُدّعى. لا كود إنتاج قبل بوابة §14.
 
-## بوابة (§14): geofenceExit حقيقي من مصدر حقيقي
+## بوابة (§14): geofenceExit حقيقي — المسار مُثبت، المصدر غير مُثبت (انظر أدناه)
 
 - [x] NDJSON يحوي سطر `geofenceExit` حقيقي (ملف: `lab/artifacts/events.ndjson` — 10 أسطر، منها 4
   أسطر `geofenceExit` مُنتِجة من خادم Traccar 6.16.0 عامِل ومارّة عبر `event.forward.url` إلى الحوض).
@@ -26,8 +26,12 @@ JDK 25، H2)؛ ما لم يُقَس موسوم **NOT RUN** ولا يُدّعى. 
 
 ## الأزمنة المقاسة (من `npm run lab:report`)
 
-النص الحرفي لمخرجات الطرفية (لا إعادة كتابة) — شغّلت `npm run lab:report` بلا وسائط على
-`lab/artifacts/events.ndjson`:
+النص الحرفي لمخرجات الطرفية (لا إعادة كتابة) — أمر البوابة المعتمد في `lab/README.md` و`lab/.github`
+على ملف أسطر البوابة العشرة:
+
+```
+npm run lab:report -- lab/artifacts/events.ndjson geofenceExit,deviceMoving
+```
 
 ```
 # M0 measurement report
@@ -45,24 +49,42 @@ budget metric: source->sink (fix time -> sink receipt); event age (eventTime -> 
 verdict: PASS p95 <= 30000 ms (source->sink)
 event-age note: deviceMoving p95 63181 ms exceeds the budget while its source->sink p95 is 3181 ms — Traccar back-dates deviceMoving eventTime to the motion onset, so this is the age of a reference timestamp, not a delay in the chain
 budget not measured for: none
-missing expected types: alarm, deviceOffline
-unexpected types: geofenceEnter, deviceMoving
+missing expected types: none
+unexpected types: geofenceEnter
 ```
+
+الجدول يعرض كل نوعٍ موجود في الملف لا الوسائط وحدها؛ الوسائط تحدّد **ميزانية الحكم** فقط، ولهذا
+يظهر `geofenceEnter` في العمود مع `unexpected types: geofenceEnter` وأسفله.
 
 - **الحكم `PASS p95 <= 30000 ms (source->sink)`** هو ميزانية §8 (≤30ث من طابع الإصلاح حتى استلام الحوض).
   `geofenceExit`: p95 **3172ms** وingest p95 **29ms**.
 - `geofenceExit` خرج من **كلا المنطقتين**: `school` (دائرة CIRCLE) و`walk-to-park` (خط `LINESTRING`) ⇒
   منطقة المسار تُقيَّم فعلاً (المصدر: `lab/report/evidence/003-scenario-run.txt`).
-- سطر `missing expected types: alarm, deviceOffline` و`unexpected types: geofenceEnter, deviceMoving`
-  نتيجة تشغيل التقرير بمجموعة الأنواع الافتراضية بلا وسائط؛ ليست إخفاقاً ولا ادّعاء — الناقل يحمل
-  الدخول/الخروج/الحركة لا `alarm`/`deviceOffline` (وهذه أنواع لم يُولّدها السيناريو).
+- **تشغيل الأمر بلا وسائط لا يعطي هذا الحكم.** افتراض `report.mjs` هو
+  `geofenceExit,alarm,deviceOffline`، والمعمل لم يولّد `alarm` ولا `deviceOffline` (لم يولّدهما
+  السيناريو في M0)، فصار الحكم — بعد إصلاح المراجعة النهائية —:
+
+```
+$ node lab/sink/report.mjs lab/artifacts/events.ndjson
+verdict: NO DATA p95 not measured for: alarm, deviceOffline (budgeted types: geofenceExit, alarm, deviceOffline)
+budget not measured for: none
+missing expected types: alarm, deviceOffline
+unexpected types: geofenceEnter, deviceMoving
+```
+
+  هذا **ليست إخفاقاً ولا ادّعاءً**: هو التقرير يقول إن نوعين من قائمة الميزانية الافتراضية لم
+  يُقاسا. وهو أيضاً تصحيحُ خطأٍ كان موجوداً: كانت نسخة سابقة من هذا التقرير تلصق تشغيلَ بلا وسائط
+  وتحت حكم `PASS`، أي أن البوابة كانت تُقرأ من مجموعة أنواع لم يُولّد المعمل اثنين منها. المراجعة
+  النهائية (المُراجِع أ) وجدت ذلك في `lab/sink/report.mjs:33-49`؛ صار الحكم يُشترط لكل نوعٍ في قائمة
+  الميزانية، وأُضيف اختباران يرفضان PASS حين يكون النوع المُوازَن غائباً أو بلا قياس
+  (`lab/tests/latency.test.mjs:101-117`). الجدول المُلصق أعلاه هو أمر البوابة المعتمد، وتحقّقت أداةٌ
+  من مطابقته لمخرجات الطرفية سطراً بسطر (949 بايت للطرفين).
 - **تنبيه لقارئ ينسخ المستودع:** الأثر المرفوع `lab/report/evidence/003-scenario-run.txt` (السطر 73 منه)
   يحمل جدولاً قديماً بحكم **`verdict: FAIL p95 > 30000 ms`** — وهو لا يناقض الجدول أعلاه: أُنتج قبل قرار
   R30 حين كان التقرير يقيس **عمر الحدث** (`p95 forward`) بدل **النقل مصدر→حوض**، فظهر `deviceMoving`
   بـ63181ms وأُخذ الحكم منه؛ بنفس الأسطر العشرة وحساب النقل الصحيح صار `deviceMoving` بـ**3181ms**
   والحكم **PASS** (الفرق يشرح نفسه في سطر `event-age note` داخل الجدول أعلاه وفي §4 من `006-phone.md`).
-  الأثرُ لم يُعدَّل — سجلّ
-  تشغيل يبقى كما خرج.
+  الأثرُ لم يُعدَّل — سجلّ تشغيل يبقى كما خرج.
 
 ## فحوص الأمان
 
@@ -100,14 +122,17 @@ loopback لا أن Traccar **يرفض** عملاء LAN؛ والاختبار من
 ## CI
 
 **NOT RUN — CI unavailable (account billing).** أي دفع إلى `lab/m0` يفشل في 3–4ث بمصفوفة `steps` فارغة
-(فوترة الحساب). المصدر المعتمد بلحظة قياسه هو `lab/logs/phone-ci-runs-audit.txt`: عند `09:44:46Z`
-`gh run list --branch lab/m0 --limit 20` أعاد **18** دفعة كلها `failure` بـ`jobs[0].steps | length == 0`
-(من `37376389740` إلى `37753900891`)؛ ثم أضافت دفعات إغلاق الملاحظات الرقمَين `37759621262` (`4bd0cf0`)
-و`37760222952` (`fc3e8f3`) فصار العدد المقاس **20** عند `09:57Z`؛ وأعادت القائمة قياساً عند `10:29Z`
-مع دفعة إغلاق Task 10 `37763740081` (`dabc003`): **21** دفعة، كلها `failure` كلها `steps: []`.
-**لا عددَ ثابت يُدوَّن**: كل دفعة
-جديدة تضيف واحداً بنفس التوقيع، لذا لا يُقال PASS للـCI أبداً وكل أرقام الاختبارات أعلاه محليّة من هذا
-الجهاز.
+(فوترة الحساب). **العدد لا يُدوَّن كثابت**: كل دفعة جديدة تضيف واحداً بنفس التوقيع، وهذا النص نفسه
+يُدفع بدفعة، فالرقم الثابت يكذب خلال دقائق. **القراءة المعادة من نسخة مستنسخة حديثة**، وهذه لقطة
+بلحظتها: عند `2026-10-08T11:12:58Z` أعاد `gh run list --branch lab/m0 --limit 100` **23** دفعة كلها
+`failure` (أقدمها `37376389740` عند `2026-10-05T21:31:20Z`، أحدثها `37764956927` على `98b2fad` عند
+`2026-10-08T10:39:56Z`)؛ و`gh run view 37764956927 --json jobs` على الأحدث أعاد `conclusion: failure`
+مع `steps: []` — أي لم تُنفَّذ خطوة واحدة، لا «فشلت خطوة». **القراءات الأقدم في نفس اليوم:** 18 عند
+`09:44:46Z` (`--limit 20` كان يسقف القائمة)، 20 عند `09:57Z` (بعد `4bd0cf0`/`fc3e8f3`)، 21 عند
+`10:29Z` (بعد `dabc003`). **لا يُقال PASS للـCI أبداً،** وكل أرقام الاختبارات أعلاه محليّة من هذا
+الجهاز. `lab/logs/phone-ci-runs-audit.txt` **لقطة محليّة غير متتبَّعة** (`git check-ignore -v` →
+`.gitignore:9:lab/logs/`) فلا يصل إلى نسخة مستنسخة ولا يصلح مرجعاً لهذا الادّعاء؛ تُعاد القراءة بأمرَي
+`gh` أعلاه.
 
 ## ما ثبت وما لم يثبت
 
@@ -161,5 +186,7 @@ VPS)، اختبار أمان من مضيف ثانٍ فعلي.
    `lab/report/decision-hosting.md`) إلى «مفتوح **قراراً مصرفيّاً** عند المالك».
 
 **بوابة §14 للحكم النهائي:** المسار مُثبت من جهاز حقيقي تحت الميزانية؛ **المصدر الحقيقي (GPS/شريحة)
-غير مثبت** بفجوة مسماة لـM1 بقرار المالك. لا كود إنتاج قبل M1، ولا ادّعاء «كشف اختطاف» أو وصول شبكة
-عامة. المخرج: هذا التقرير + `decision-hosting.md` + `2026-10-05-roadmap.md` + التصحيحات أعلاه.
+غير مثبت** بفجوة مسماة لـM1 بقرار المالك (R35: «بلا تثبيت — إثبات المسار فقط»). لا كود إنتاج قبل إغلاق
+§14 أو قرار صريح من المالك بتضييقها، ولا ادّعاء «كشف اختطاف» أو وصول شبكة عامة. المخرج: هذا التقرير +
+`decision-hosting.md` + `2026-10-05-roadmap.md` + التصحيحات أعلاه. **دمج `lab/m0` إلى `main` قرار المالك
+وحده** (Task 10 Step 5)، ولا يُدمَج ولا يُفتح PR بغير أمره.
