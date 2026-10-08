@@ -85,6 +85,62 @@ LAB_API_URL=http://127.0.0.1:8082/api LAB_OSMAND_HOST=127.0.0.1 LAB_OSMAND_PORT=
 مفتوحٌ عمداً على `0.0.0.0` لأن الهاتف يجب أن يرسل المواضع. **NOT RUN:** اختبار من مضيف ثانٍ فعلي
 (لا يوجد: لا Docker ولا CI ولا خادم ثانٍ). يبقى فتح `:5055` على LAN قراراً يُراجع قبل الإنتاج.
 
+## الهاتف مصدراً — مسار USB/adb بلا تثبيت (Task 9، قرار المالك R35)
+إثبات المسار: مواضع تُولَّد **من داخل الهاتف** ⇒ `127.0.0.1:5055` عبر `adb reverse` فوق USB ⇒
+Traccar (`protocol: osmand`, الجهاز `lab-child-1`) ⇒ حدث `geofenceExit` حقيقي ⇒ الحوض. الدليل
+الكامل بالأرقام: `lab/report/evidence/006-phone.md`. **لا يُثبَّت أي APK (Traccar Client خارج
+النطاق بقرار المالك)، والمواضع يدوية الحقن لا GPS حقيقي — هذه فجوة مسماة لمهمة M1 لا ادّعاء.**
+
+قواعد إلزامية قبل أي تنفيذ:
+- **لا تُدخل رقم قفل الشاشة في أي أمر أو ملف، ولا تطلبه.** تحقّق أولاً:
+  `adb shell dumpsys power | grep mWakefulness` (متوقع `Awake`) و`dumpsys window | grep mInputRestricted`
+  (متوقع `false`). إن كان الجهاز مقفلاً: أوقف الخطوات التي تحتاج الشاشة واطلب من المالك فتحه يدويّاً.
+- **لا تنشر المعرّف الكامل للجهاز في أي ملف مستودع؛ آخر أربع خانات فقط.**
+- adb ليس على PATH: `ADB="/c/Users/Administrator/AppData/Local/Android/Sdk/platform-tools/adb.exe"`
+  (v1.0.41 / 37.0.1). لا Wi‑Fi في هذا الحاسوب؛ الوصول الوحيد هو USB — **لا تفتح منفذاً على LAN ولا
+  تغيّر `web.port` ولا تضف قاعدة جدار حماية**؛ إن أُجبرت على tethering فاحذف قاعدتك في نفس الجلسة
+  وألحق مخرج الحذف.
+- **النفق فقط (`adb reverse`)**: المنافذ تبقى loopback داخل الهاتف.
+
+```bash
+ADB="/c/Users/Administrator/AppData/Local/Android/Sdk/platform-tools/adb.exe"
+"$ADB" devices -l                          # سطر واحد device (المعرّف يُحرَّف لآخر 4 خانات)
+"$ADB" reverse tcp:5055 tcp:5055           # مواضع osmand
+"$ADB" reverse tcp:8082 tcp:8082           # لوحة الإدارة من متصفح الهاتف
+"$ADB" reverse --list                      # المتوقع: سطرانا النفق
+
+# انحراف الساعة (قِس قبل الحقن؛ أزمنة AC-1 تُقرأ مع هذا الانحراف):
+P=$("$ADB" shell date +%s | tr -d '\r'); C=$(date +%s); echo "phone-pc=$((P-C))"
+
+# حقن موضع من داخل الهاتف (curl غير موجود على Android؛ صيغة sleep إلزامية مع toybox nc
+# وإلا خرج nc قبل قراءة الرد بصفر بايت). NOW من ساعة الهاتف حيّاً — Traccar يتجاهل
+# الأقدم من 15 دقيقة في التنبيهات. الزوج داخل/خارج المنطقة من lab/scenarios/school-exit.json:
+NOW=$("$ADB" shell date +%s | tr -d '\r')
+"$ADB" shell "{ printf 'GET /?id=lab-child-1&valid=true&timestamp=${NOW}&lat=36.75380&lon=3.05880&accuracy=12&speed=0&bearing=0 HTTP/1.0\r\n\r\n'; sleep 2; } | nc -w 5 127.0.0.1 5055"
+# ثم بمسافة ~30م+ حتى تُطلق الخروج:
+NOW=$("$ADB" shell date +%s | tr -d '\r')
+"$ADB" shell "{ printf 'GET /?id=lab-child-1&valid=true&timestamp=${NOW}&lat=36.75475&lon=3.05955&accuracy=15&speed=3.4&bearing=45 HTTP/1.0\r\n\r\n'; sleep 2; } | nc -w 5 127.0.0.1 5055"
+# المتوقع من مفسّر osmand: HTTP 200؛ وضابط سلبي: id مجهول يرد 400.
+
+# القياس بعد كل ذلك كما في «تشغيل السلسلة كاملة»:
+wc -l lab/artifacts/events.ndjson
+npm run lab:report -- lab/artifacts/events.ndjson geofenceExit,deviceMoving
+```
+
+**الجيرجودر:** القالب لا يعطّل `geocoder`؛ أضِف `<entry key='geocoder.enable'>false</entry>` إلى
+المُولَّد `lab/traccar/kidguard-lab.xml` (git-ignored) قبل التشغيل — الدليل: `/api/server` يقرأ
+`geocoderEnabled:false` ولا نداء nominatim في السجل (تسريب العنوان موثّق في `005-fanout.md` §9.2).
+
+**التنظيف (إلزامي، بمخرجات ملصقة في الدليل):**
+
+```bash
+"$ADB" reverse --remove-all ; "$ADB" reverse --list    # المتوقع: فارغ
+# أوقف الحوض والخادم، ثم تحقّق:
+netstat -ano | grep -E ':(8082|5055|5199)' | grep LISTENING || echo "ALL LAB PORTS CLOSED (8082/5055/5199)"
+powershell -NoProfile -Command "(Get-Process java -ErrorAction SilentlyContinue | Measure-Object).Count"  # المتوقع 0
+netsh advfirewall firewall show rule name="kidguard-lab-osmand" 2>/dev/null || echo "NO-FIREWALL-RULE-LEFT"
+```
+
 ## تنزيل الخادم المثبّت
 خطوة قياس على الجهاز، منفصلة عن القالب والمولّد: تنزيل traccar-other-6.16.0.zip ثم إقلاع Traccar على
 JDK 25. **قُطِعا فعلاً** في هذا الفرع: الدليل `001-download.txt` (SHA-256 للتنزيل) و`001b-jdk25-boot.txt`
