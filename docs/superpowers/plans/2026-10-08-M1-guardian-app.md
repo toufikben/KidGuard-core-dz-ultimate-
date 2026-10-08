@@ -17,7 +17,8 @@
 - **الفرع:** كل كود M1 على `m1/guardian-app`، مُشتقّ من رأس `lab/m0` **بعد** التزام هذه الخطة (لا من `main`). يُدفع إلى الأصل. **لا دمج إلى `main` ولا PR** — الدمج فعل المالك وحده. نقطة الاشتقاق تُقاس بـ`git rev-parse origin/lab/m0` وتُدرَج في السجل، ولا تُكتب هنا كـsha ثابت (أي التزام توثيقي بعدها يفسّخها).
 - **حدود R37 (لا تُتجاوز ولا تُلمَّح):** لا ادّعاء تسليم على قناة حقيقية (Telegram/mail = **NOT RUN** حتى يقدّم المالك الأسرار)، لا ادّعاء استمرارية 24/7، لا ادّعاء عمل فوق شبكة عامة أو استضافة (الحالة `LAB-ONLY`)، لا شراء عتاد M3، لا اختبار ميداني M4. **شقّ المصدر ما زال مفتوحاً (R35):** AC-1 تُقاس **نقلاً** بمصدر مُحقَن، لا GPS حقيقي.
 - **AC-3 في هذه المرحلة على قناة `web` وحدها** (قناة Traccar `web` قناة حقيقية مُثبَتة التخزين والتوصيل)، والبريد/تيليجرام يُكتب بجانبها **NOT RUN** لا FAIL.
-- **CI:** `build-release.yml` يعمل على `main`/`develop` فقط، والحساب معطّل أصلاً (الر14: «recent account payments have failed»). لذا **بوابة التحقق الأساسية محلية**: `npm run lint` + `npm run build` + `npm test` + `npm run test:app` بأعداد مرئية. أي خطوة CI تُذكر تُكتب **NOT RUN — CI unavailable (account billing)**، ولا تُعلَّق بوابة مهمة عليها.
+- **بوابة محلية لها أنياب (R-M1-7، قرار بعد مراجعة Task 1):** «أعداد مرئية» وحدها لا تكفي — مقيس: إنْ تغيّر glob الـ`test:app` أو حُذف آخر ملف اختبارات، يرجع العدّاء `ℹ tests 0` ويخرج **صفرّاً**، والحرّاس داخل `tests/app/` لا يستطيع معاقبة جمعِه نفسه (لن يُجمَّع). لذا ملزمان: (١) كل كتلة بوابات في كل مهمة تُشغّل **سطر الأرضية نفسه المستعمل في `m1-ci.yml`** محليّاً وتلصق خرجه (`npm run test:app --silent | tee /tmp/app.log` ثم `grep '^ℹ tests ' | awk '{print $3}'` ومقارنتها بـ`EXPECTED_MIN_TESTS`) — لا اعتمادية جديدة ولا ملف إضافي؛ و(٢) من Task 3 فصاعداً يكون الفحص الآلي في `npm test` (الملف الوحيد الذي يُنفَّذ دائماً مهما كان الـglob) عبر `tests/core.test.ts` كما هو مفصّل في Task 3 Step 6.
+- **CI:** `build-release.yml` يعمل على `main`/`develop` فقط، والحساب معطّل أصلاً (الر14: «recent account payments have failed»). لذا **بوابة التحقق الأساسية محلية**: `npm run lint` + `npm run build` + `npm test` + `npm run test:app` بأعداد مرئية. أي خطوة CI تُذكر تُكتب **NOT RUN — CI unavailable (account billing)**، ولا تُعلَّق بوابة مهمة عليها. **قراءة CI صحيحة (مقيسة في Task 1):** التشغيل يُدرَج بحالة `completed / failure` في ≈3ث مع `steps: []` — هذه بصمة انقطاع الدفع، ولا تُقرأ إطلاقاً «اختبارات فشلت». والأمر `gh run view --json jobs` غير مدعوم في نسخة الـCLI هنا، فلا يُستخدم كـ«دليل» (يسقط في `|| echo "no run yet"`)؛ المستعمل: `gh run list --branch <فرع> --limit 3` ثم `gh run view <id>` والتفتيش عن `steps: []`.
 - **الاعتماديات:** لا اعتمادية إنتاج جديدة ولا اعتمادية اختبار جديدة. ‏`npm ci` مقيس على هذا الجهاز: **188 حزمة في ≈5 دقائق**، وتحذير `allow-scripts` على `esbuild` **غير مانع للبناء** (BUILD_EXIT=0 مقيس بعده مباشرة).
 - **لا أسرار في المستودع ولا في الطرفية:** بيانات دخول مستخدمَي المعمل تُدخل من واجهة التطبيق وقت التشغيل؛ لا `VITE_*` لكلمة مرور، ولا كلمة مرور في سطر أوامر، ولا في لقطة شاشة، ولا في سجلّ.
 - **لا بيانات حقيقية:** أسماء `lab-child-*` و`lab-guardian-*`، إحداثيات حول `36.7538, 3.0588`، بريد `@example.com`. **لا أسماء أطفال حقيقية** في أي ملف أو لقطة (§9.10). **لا رقم تسلسل الجهاز كاملاً** — آخر أربع خانات فقط. **لقطات الشاشة لا تُرفع** (شريط حالة المالك): تبقى في `lab/artifacts/` مع بصمة MD5 في النص.
@@ -109,6 +110,8 @@
 ---
 
 ## Task 1: أرضية التحقق على فرع M1
+
+> **ملاحظة بعد القياس (R-M1-7):** هذا Task قُبل بمفظوم معلن — لا شيء في هذه المهمة يمنع محليّاً حالة «أخضر بلا اختبارات» (`tests 0` تخرج صفرّاً، والحرّاس داخل `tests/app/` لا يرون جمع أنفسهم، وأرضية `m1-ci.yml` لا تُنفَّذ على حساب معطّل). الأنياب الآلية تُبنى في Task 3 Step 5، وقاعدة «شغّل سطر الأرضية محليّاً في كل كتلة بوابات» سارية من الآن في كل مهمة.
 
 **Files:**
 - Create: `.github/workflows/m1-ci.yml`, `tests/app/harness.test.ts`
@@ -390,6 +393,7 @@ git push
 
 **Files:**
 - Create: `src/services/traccar/types.ts`, `src/services/traccar/client.ts`
+- Modify: `tests/core.test.ts` (فحص الأرضية المحلي — Step 5، R-M1-7ب)، `.github/workflows/m1-ci.yml` (الأرضية `1` ⇒ `7`)
 - Test: `tests/app/client.test.ts`
 
 **Interfaces:**
@@ -627,10 +631,37 @@ npm run lint && npm run build >/tmp/b.log 2>&1; echo "BUILD_EXIT=$?"; grep 'buil
 
 المتوقع: `tests 7 / pass 7 / fail 0` (6 عميل + حارس العدّاء من Task 1)، lint وbuild صفر.
 
-- [ ] **Step 5: ارفع أرضية CI في نفس الالتزام** — بعد هذا commit يكون `ℹ tests 7` مقيساً (1 حارس العدّاء + 6 عميل REST)، فتُكتب `EXPECTED_MIN_TESTS: '7'` في `.github/workflows/m1-ci.yml` بدل `1`. **لا ترفعها على أمل ما سيأتي**، ولا تتركها على الرقم القديم بعد إضافة اختبارات: في الحالتين تفقد البوابة معناها (وهي البوابة الوحيدة ما دام CI معطلاً) ثم:
+- [ ] **Step 5: أنياب محلية للفحص الآلي (R-M1-7ب) — `tests/core.test.ts`** — هذا أول مهمة تضيف اختبارات إنتاج حقيقية، وهي التي تُغلق الثقب الذي تركه Task 1 بمقيسه: الحرّاس داخل `tests/app/` لا يرون جمعَ أنفسهم، وCI لا ينفّذ شيئاً. `npm test` هو الأمر المحلي الوحيد الذي يعمل دائماً مهما يكن الـglob، فنجعل فيه الفحص. **بدون أي اعتمادية جديدة**: يُطلق العدّاء الفرعي، يقرأ `ℹ tests N`/`ℹ fail M`، ويقارن N بأرضية **مقروءة من `m1-ci.yml` نفسها** (مصدر واحد للحقيقة، فلا رقم يُنقل بين ملفين ويسقط التحديث):
+
+```ts
+// App-runner floor, enforced where it is always executed. A test inside tests/app/ cannot
+// police its own collection: when the glob matches nothing the runner prints `tests 0` and
+// exits 0, so the guard file is never run. npm test is the local gate that always runs.
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+
+const workflow = readFileSync(new URL('../.github/workflows/m1-ci.yml', import.meta.url), 'utf8');
+const floorMatch = workflow.match(/Run app tests with a measured count floor[\s\S]*?EXPECTED_MIN_TESTS: '(\d+)'/);
+assert(floorMatch !== null, 'm1-ci.yml lost the app count floor step');
+const floor = Number(floorMatch![1]);
+
+const run = spawnSync('npm', ['run', 'test:app', '--silent'], { encoding: 'utf8', shell: true });
+const counted = /ℹ tests (\d+)/.exec(run.stdout);
+const failed = /ℹ fail (\d+)/.exec(run.stdout);
+assert(counted !== null && failed !== null, `app runner printed no summary: ${run.stdout.slice(-400)}`);
+console.log(`app floor check: tests ${counted[1]} >= ${floor}, fail ${failed[1]}`);
+assert(Number(counted[1]) >= floor, `app tests de-collected or shrank: ${counted[1]} < ${floor}`);
+assert(Number(failed[1]) === 0, `app runner reports ${failed[1]} failures`);
+```
+
+ثم **قيس الحارس كما يُقاس أي حرّاس** (درس Task 1 Step 4b): (أ) مرّر كما هو؛ (ب) ارفع الأرضية في `m1-ci.yml` إلى `999` مؤقتاً وتأكد أن `npm test` يفشل برسالة `de-collected or shrank`؛ (ج) غيّر الـglob في `package.json` إلى `tests/apx/*` مؤقتاً (وهي بالضبط حالة فقد الجمع التي لا يراها Task 1) وتأكد أن `npm test` **لا يزال** يفشل؛ ثم رجّع الاثنين و`git status --porcelain` فارغ. الصق الثلاثة في الأثر.
+
+- [ ] **Step 6: ارفع أرضية CI في نفس الالتزام** — بعد هذا commit يكون `ℹ tests 7` مقيساً (1 حارس العدّاء + 6 عميل REST)، فتُكتب `EXPECTED_MIN_TESTS: '7'` في `.github/workflows/m1-ci.yml` بدل `1`. **لا ترفعها على أمل ما سيأتي**، ولا تتركها على الرقم القديم بعد إضافة اختبارات: في الحالتين تفقد البوابة معناها (وهي البوابة الوحيدة ما دام CI معطلاً) ثم:
 
 ```bash
-git add src/services/traccar tests/app/client.test.ts .github/workflows/m1-ci.yml
+npm run test:app --silent | tee /tmp/app.log; n=$(grep -E '^ℹ tests ' /tmp/app.log | awk '{print $3}'); awk -v n="$n" -v f=7 'BEGIN { exit (n+0 >= f+0) ? 0 : 1 }'; echo "LOCAL_FLOOR_EXIT=$?"
+npm test 2>&1 | tail -4
+git add src/services/traccar tests/app/client.test.ts tests/core.test.ts .github/workflows/m1-ci.yml
 git commit -m "feat(m1): Traccar REST client with typed error kinds; secret-safe failures (6 tests, app floor 7)"
 git push
 ```
