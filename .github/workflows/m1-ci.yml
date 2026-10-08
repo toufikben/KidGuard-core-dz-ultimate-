@@ -1,0 +1,37 @@
+name: m1
+on:
+  push:
+    branches: ['m1/**']
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+      - name: Type-check
+        run: npm run lint
+      - name: Build the web bundle
+        run: npm run build
+      # نفس درس M0: ملف *.test.mjs/‎.test.ts بلا test() يطبع tests 1 ويخرج ٠،
+      # فالبوابة أرضية عدد لا شفرة خروج. تُرفع الأرقام في نفس الالتزام الذي يزيد الاختبارات.
+      - name: Run app tests with a measured count floor
+        env:
+          EXPECTED_MIN_TESTS: '1'
+        run: |
+          set -o pipefail
+          npm run test:app --silent | tee /tmp/app.log
+          n=$(grep -E '^ℹ tests ' /tmp/app.log | awk '{print $3}')
+          echo "detected tests=$n (floor $EXPECTED_MIN_TESTS)"
+          awk -v n="$n" -v f="$EXPECTED_MIN_TESTS" 'BEGIN { exit (n+0 >= f+0) ? 0 : 1 }'
+      - name: Lab suite must not regress
+        env:
+          EXPECTED_MIN_TESTS: '97'
+        run: |
+          set -o pipefail
+          npm run test:lab --silent | tee /tmp/lab.log
+          n=$(grep -E '^ℹ tests ' /tmp/lab.log | awk '{print $3}')
+          awk -v n="$n" -v f="$EXPECTED_MIN_TESTS" 'BEGIN { exit (n+0 >= f+0) ? 0 : 1 }'

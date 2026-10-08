@@ -14,6 +14,7 @@
     "test": "tsx tests/core.test.ts",
     "test:coverage": "npm test",
     "test:lab": "node --test \"lab/tests/*.test.mjs\"",
+    "test:app": "node --import tsx --test \"tests/app/*.test.ts\"",
     "lab:render": "node lab/scripts/render-config.mjs",
     "lab:check": "node lab/scripts/check-config.mjs --template lab/traccar/kidguard-lab.template.xml",
     "lab:report": "node lab/sink/report.mjs",
