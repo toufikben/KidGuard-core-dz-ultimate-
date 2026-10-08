@@ -124,3 +124,32 @@ test('validation rejects a lab config with no geocoder.enable at all', () => {
   const { errors } = validateConfig(bad, { allowPlaceholders: true });
   assert.ok(errors.some((e) => e.includes('geocoder.enable')), errors.join('\n'));
 });
+
+// A hand-edited (or docs-pasted) entry written with double quotes is valid Spring XML, so Traccar
+// reads it — while a parser that only matches key='…' never sees it. Measured before this test:
+// `geocoder.enable=false` (single quotes) followed by `geocoder.enable="true"` (double quotes)
+// printed `config ok` while the property file loaded with the geocoder ON.
+test('validation reads entries written with double quotes', () => {
+  const bad = template.replace(
+    "<entry key='geocoder.enable'>false</entry>",
+    '<entry key="geocoder.enable">true</entry>');
+  assert.notEqual(bad, template);
+  const { errors, entries } = validateConfig(bad, { allowPlaceholders: true });
+  assert.equal(entries.get('geocoder.enable'), 'true',
+    `a double-quoted entry must be parsed, got ${JSON.stringify(entries.get('geocoder.enable'))}`);
+  // Asserted on the rule's own wording: "geocoder.enable is required" also names the key, so a test
+  // that only greps for the key name would pass while the parser stayed blind and never read `true`.
+  assert.ok(errors.some((e) => /geocoder\.enable: must be false/.test(e)), errors.join('\n'));
+});
+
+// Two definitions of one key is not something to guess a winner for: Spring takes the last, and a
+// first-wins parser would hide the override. Every rule key must appear exactly once.
+test('validation rejects a key defined twice', () => {
+  const bad = template.replace(
+    "<entry key='geocoder.enable'>false</entry>",
+    "<entry key='geocoder.enable'>false</entry>\n  <entry key='geocoder.enable'>true</entry>");
+  assert.notEqual(bad, template);
+  const { errors } = validateConfig(bad, { allowPlaceholders: true });
+  assert.ok(errors.some((e => /geocoder\.enable/.test(e) && /twice|duplicate/i.test(e))),
+    errors.join('\n'));
+});

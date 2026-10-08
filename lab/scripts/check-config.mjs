@@ -51,13 +51,22 @@ const FORBIDDEN_KEYS = ['web.path', 'web.debug', 'web.mcp.enable', 'web.register
 export function validateConfig(xml, { allowPlaceholders = false } = {}) {
   const errors = [];
   const entries = new Map();
-  const re = /<entry\s+key='([^']+)'>\s*([^<]*?)\s*<\/entry>/g;
-  for (const match of xml.matchAll(re)) entries.set(match[1], match[2]);
-  if (/<entry\s+key='([^']+)'\s*\/>/.test(xml)) {
-    for (const match of xml.matchAll(/<entry\s+key='([^']+)'\s*\/>/g)) entries.set(match[1], '');
+  const duplicates = new Set();
+  // Both quote styles are valid Spring XML, so both are loaded by Traccar; a parser that matched
+  // only key='…' treated a double-quoted override as absent and printed `config ok` while the
+  // property file actually carried a second, different value for the same key.
+  const entryRe = /<entry\s+key=(['"])([^'"]+)\1\s*(?:\/>|>([^<]*?)<\/entry>)/g;
+  for (const match of xml.matchAll(entryRe)) {
+    const key = match[2];
+    if (entries.has(key)) duplicates.add(key);
+    // Last definition wins, the way the properties bean loads them, so a duplicate is reported
+    // against the value the server would really run with.
+    entries.set(key, (match[3] ?? '').trim());
   }
 
   if (!xml.includes('LAB ONLY')) errors.push('missing the LAB ONLY marker');
+
+  for (const key of duplicates) errors.push(`${key} is defined twice in one config`);
 
   for (const [key, check] of Object.entries(RULES)) {
     if (!entries.has(key)) { errors.push(`${key} is required`); continue; }
