@@ -100,7 +100,9 @@
 
 **تُعدَّل:** `package.json` (سكريبت `test:app`)، `vite.config.ts` (proxy المعمل + `allowedHosts`)، `src/App.tsx` (إزالة الدور/`localStorage`، تركيب الشاشات)، `src/components/{MapView,ParentDashboard,SafeZoneForm,Navbar,SettingsModal}.tsx`، `src/types/index.ts`، `src/translations/index.ts`، `tests/core.test.ts`، `lab/README.md` (قسم M1)، `docs/superpowers/plans/2026-10-05-roadmap.md`.
 
-**تُحذف (المهمة 11، لا قبلها):** `src/services/{GeofenceMonitor,RiskEngine,AlertPolicyManager,SmsService,EmailService,BackgroundLocationService,OfflineQueueService,SyncApiService,ProtectionStateService,PairingService,BatteryEngine,SecurityChecker}.ts` **بحسب ما تُبدِله المهمة المطبّقة، لا بحسب الاسم** — انظر §1.5 من المواصفة (إلغاء `DeviceRole`، `localStorage` كسجلّ، `server/index.mjs`، مفتاح المحاكاة) و§1 بند 6 (إبقاء `GpsFreshnessService` و`PrivacyDataService`). **لا Supabase في هذا المستودع** (مقيس: صفر نتيجة في الكود و`package-lock.json`) فلا «حذف طبقة Supabase» — تُذكر كموجود‑عدم.
+**تُحذف (المهمة 11، لا قبلها) — قائمة §1 بند 5 حصراً، لا أكثر:** نموذج الأدوار (`DeviceRole` في `src/types/index.ts` وفروعه في `App.tsx`/`Navbar.tsx`/`SettingsModal.tsx`)، `localStorage` **بوصفه سجلاً** (مفاتيح السجلّ الخمسة في Task 11 Step 1)، `server/index.mjs` + سكريبت `server`، طبقة Supabase (**مُوصوفة كموجود‑عدم**: مقيس صفر نتيجة في الكود و`package-lock.json`، فلا «حذف طبقة Supabase» يُدّعى)، ومفاتيح المحاكاة (`isSimulatingOutside`/`testModeEnabled`/`setMockBatteryLevel`/`method:'simulated'`).
+
+**لا تُحذف — قائمة §1 بند 6 ملزمة (الرقم ستّة، والحارس في Task 11 Step 1 يرفض اختفاء أي منها):** `GeofenceMonitor`، `RiskEngine`، `GpsFreshnessService`، `OfflineQueueService`، `AlertPolicyManager`، `PrivacyDataService` **واختباراتها**. هذه طبقات محلية سريعة (§7) وتبقى؛ وما يتغيّر فيها هو **مصدر البيانات** (من `localStorage` إلى الخادم) لا وجودها. أي حذف لأحدها = تجاوز للمواصفة، لا تنظيف.
 
 **قاعدة الترتيب:** لا حذف قبل أن توجد البدالة المختبَرة. المهمة 11 أخيرة لهذا السبب.
 
@@ -1073,7 +1075,7 @@ npm run lab:scenario -- school-exit --speed=1
 ## Task 11: حذف طبقات §1.5 — بعد أن توجد البدائل لا قبلها
 
 **Files:**
-- Delete: `server/index.mjs`؛ خدمات §1.5 التي لم تعد مُستعمَلة (القائمة من Task 1–10، لا من الاسم)
+- Delete: `server/index.mjs`؛ وفروع نموذج الأدوار ومفاتيح المحاكاة فقط — **الحذف محصور بقائمة §1 بند 5 أعلاه**، لا بـ«خدمة لم تعد مستعملة» (قائمة الإبقاء §1 بند 6 تُبقي الستّ وختباراتها، وما ليس في القائمتين يُترك ويُدرَج كدين مسمّى)
 - Modify: `package.json:8` (سكريبت `server`)، `src/types/index.ts` (إزالة `DeviceRole` L1)، `src/App.tsx` (L38-70/73-79/109/148/674-712)، `src/components/Navbar.tsx:74-94`، `src/components/SettingsModal.tsx:28,45`، `tests/core.test.ts` (عينات `localStorage` L160-168 وحالات المحاكاة)، `src/services/*` المُبدَّلة
 - Test: `tests/app/noLocalRecord.test.ts`
 
@@ -1081,10 +1083,12 @@ npm run lab:scenario -- school-exit --speed=1
 - Consumes: كل ما سبق.
 - Produces: لا واجهة جديدة؛ **مُنظِّم**: `PrivacyDataService` يبقى (§1 بند 6) لكنه يعمل على ما هو محليّ فعلاً (الإعدادات والتصدير)، لا كسجلّ.
 
-- [ ] **Step 1: RED بحارسين، لا بحذفٍ مروى**: (أ) اختبار يقرأ قائمة **مفاتيح `localStorage` المكتوبة** أثناء تشغيل التدفقات الحرجة (حفظ منطقة، تبديل طفل) ويassert أنها خالية من `kidguard_safe_zones`/`kidguard_device_pairing`/`kidguard_protection_state`/`kidguard_offline_queue`/`kidguard_alert_history`؛ (ب) اختبار وحدة على `src/` كله يرفض ظهور `DeviceRole` أو `'PARENT'|'CHILD'` في الأنواع (grep-based test مُسمّى، لا تعليق)؛ (ج) رفض أي مفتاح محاكاة: `isSimulatingOutside`/`testModeEnabled`/`setMockBatteryLevel`/`method:'simulated'` (§3 من ملاحظات الاستطلاع: `testModeEnabled` لا يُقرأ أصلاً — يُحذف لا يُوصَل).
-- [ ] **Step 2: فشل الحارسين بالسبب الصحيح** (يجب أن يريا الموجود اليوم، وإلا الحارس وهمي — قِس وادرج سطر «رأى المفتاح kidguard_safe_zones» في التقرير).
-- [ ] **Step 3: حذف/استبدال** بالتدريج، وكل حذف بمفرده في الالتزام حتى يبقى `git diff` مقروءاً؛ واستبدال `tests/core.test.ts` للحذف ببدائل تغطي السلوك الجديد (**الإبقاء على الاختبارات التي تغطي منطقاً حقيقياً، وحذف ما يغطي شطباً**). §1 بند 6 يُلزم بإبقاء `GeofenceMonitor` و`RiskEngine` و`GpsFreshnessService` و`OfflineQueueService` و`AlertPolicyManager` و`PrivacyDataService` **واختباراتها**: إن بَدَّلها الخادم فليُعلَّن المشطوب في التقرير لا ليُحذف بصمت؛ القرار لكل وحدة: يبقى كطبقة محلية سريعة (§7) أم يُشطب؟
-- [ ] **Step 4: الحارسان يمرّان** + `npm run lint && npm run build && npm test && npm run test:app` كلها خضراء، و`npm run test:lab` لا ينحدر (97).
+- [ ] **Step 1: RED بثلاثة حرّاس، لا بحذفٍ سريع**: (أ) اختبار يقرأ **مفاتيح `localStorage` المكتوبة** أثناء تشغيل التدفقات الحرجة (حفظ منطقة، تبديل طفل) ثم يُثبت أنها خالية من مفاتيح السجلّ: `kidguard_role`، `kidguard_safe_zones`، `kidguard_device_pairing`، `kidguard_protection_state`، `kidguard_offline_queue`، `kidguard_alert_history`؛ (ب) اختبار على شجرة `src/` كلها يرفض ظهور `DeviceRole` أو `'PARENT'|'CHILD'` في الأنواع (grep-based test مُسمّى، لا تعليق)؛ (ج) رفض أي مفتاح محاكاة: `isSimulatingOutside`/`testModeEnabled`/`setMockBatteryLevel`/`method:'simulated'` (§3 من ملاحظات الاستطلاع: `testModeEnabled` لا يُقرأ أصلاً — يُحذف لا يُوصَل)؛ (د) **حارس قائمة الإبقاء**: اختبار يُثبت أن الملفات الستّة من §1 بند 6 موجودة ولا تزال تُستورَد (`GeofenceMonitor`, `RiskEngine`, `GpsFreshnessService`, `OfflineQueueService`, `AlertPolicyManager`, `PrivacyDataService`) — هذا الحرّاس يمنع «تنظيفاً» يمسّ ما أمرت المواصفة بإبقائه؛ (هـ) حارس الاختبارات: `tests/core.test.ts` (مقيس: عدّاء `tsx` مكتوب باليد، سطر 282 يطبع `core unit tests passed`، لا `node:test`) يبقى أخضر بعد كل حذف، ولا يُحذف منه سطر يغطي منطقاً باقياً.
+
+**قرار مُلزم (R-M1-4) عن الحدود:** المفاتيح التسعة المكتوبة في `src/` مقيَسة بحروفها؛ ثلاثة منها إعداد محض ويبقى لها `localStorage`: `kidguard_lang`، `kidguard_theme`، `kidguard_alert_policy` (سياسة وليٍّ محليّة، و§1 بند 6 يُبقي `AlertPolicyManager`؛ المرحل في M2 يقرر لاحقاً إن كانت تُقرأ من الخادم). المحظور هو **السجلّ** لا **الإعداد**، والحرّاس (أ) يميّز بينهما بقائمة أسماء لا بقاعدة عامة.
+- [ ] **Step 2: فشل الحرّاس بالسبب الصحيح** (يجب أن يروا الموجود اليوم، وإلا كان الحرّاس وهماً — قِس وادرج في التقرير سطراً لكل حرّاس: أي مفتاح/أي ملف رأى، وكم عدد المطابقات في `src/`).
+- [ ] **Step 3: حذف/استبدال** بالتدريج، وكل حذف بمفرده في الالتزام حتى يبقى `git diff` مقروءاً؛ واستبدال `tests/core.test.ts` للحذف ببدائل تغطي السلوك الجديد (**الإبقاء على الاختبارات التي تغطي منطقاً حقيقياً، وحذف ما يغطي شطباً**). §1 بند 6 يُلزم بإبقاء `GeofenceMonitor` و`RiskEngine` و`GpsFreshnessService` و`OfflineQueueService` و`AlertPolicyManager` و`PrivacyDataService` **واختباراتها**: القرار لكل وحدة ليس «تبقى أم تُشطب» (هي باقية بحكم المواصفة) بل **من أين تأتي ببياناتها** — من `localStorage` إلى الخادم، مع بقاء منطقها المحلي السريع كما في §7. وما ليس في قائمة الإبقاء ولا في قائمة §1 بند 5 (مثل `SmsService`/`EmailService`/`BackgroundLocationService`) **لا يُمسّ في M1**: قراره ملك M2 (المرحل) ويُدرَج في التقرير كدين مسمّى.
+- [ ] **Step 4: الحرّاس الخمسة يمرّون** + `npm run lint && npm run build && npm test && npm run test:app` كلها خضراء، و`npm run test:lab` لا ينحدر (97).
 - [ ] **Step 5: تحقّق على الهاتف** (المسار المُثبت نفقاً):
 
 ```bash
