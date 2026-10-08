@@ -56,6 +56,13 @@ unexpected types: geofenceEnter, deviceMoving
 - سطر `missing expected types: alarm, deviceOffline` و`unexpected types: geofenceEnter, deviceMoving`
   نتيجة تشغيل التقرير بمجموعة الأنواع الافتراضية بلا وسائط؛ ليست إخفاقاً ولا ادّعاء — الناقل يحمل
   الدخول/الخروج/الحركة لا `alarm`/`deviceOffline` (وهذه أنواع لم يُولّدها السيناريو).
+- **تنبيه لقارئ ينسخ المستودع:** الأثر المرفوع `lab/report/evidence/003-scenario-run.txt` (السطر 73 منه)
+  يحمل جدولاً قديماً بحكم **`verdict: FAIL p95 > 30000 ms`** — وهو لا يناقض الجدول أعلاه: أُنتج قبل قرار
+  R30 حين كان التقرير يقيس **عمر الحدث** (`p95 forward`) بدل **النقل مصدر→حوض**، فظهر `deviceMoving`
+  بـ63181ms وأُخذ الحكم منه؛ بنفس الأسطر العشرة وحساب النقل الصحيح صار `deviceMoving` بـ**3181ms**
+  والحكم **PASS** (الفرق يشرح نفسه في سطر `event-age note` داخل الجدول أعلاه وفي §4 من `006-phone.md`).
+  الأثرُ لم يُعدَّل — سجلّ
+  تشغيل يبقى كما خرج.
 
 ## فحوص الأمان
 

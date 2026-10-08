@@ -166,7 +166,7 @@ git-ignored، MD5 `aa85f367ddcd51925afc7118750dff73`، 3 أسطر: `geofenceEnte
 «فشل» لما حُكم عليه قبل مطابقة ناقل الحوض، وقد طابقه: 3/3 (المطابقة حرفية: `eventId` 1،2،3 في
 الناقل تقابل أحداث السجل الثلاثة بالزمن والإحداثيات نفسها).
 
-## 4. أرقام AC-1 على مصدر حقيقي (مع ما تعنيه وما لا تعنيه)
+## 4. أرقام AC-1 على جهاز حقيقي (مع ما تعنيه وما لا تعنيه)
 
 `npm run lab:report -- lab/artifacts/events-phone-2026-10-08.ndjson geofenceExit,deviceMoving`
 (النص الكامل في `lab/logs/phone-report.txt`):
