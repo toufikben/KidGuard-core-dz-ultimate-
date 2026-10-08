@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-- **الفرع:** كل كود M1 على `m1/guardian-app` (مُنشتق من `lab/m0` عند HEAD `24f76ba`)، يُدفع إلى الأصل. **لا دمج إلى `main` ولا PR** — الدمج فعل المالك وحده.
+- **الفرع:** كل كود M1 على `m1/guardian-app`، مُشتقّ من رأس `lab/m0` **بعد** التزام هذه الخطة (لا من `main`). يُدفع إلى الأصل. **لا دمج إلى `main` ولا PR** — الدمج فعل المالك وحده. نقطة الاشتقاق تُقاس بـ`git rev-parse origin/lab/m0` وتُدرَج في السجل، ولا تُكتب هنا كـsha ثابت (أي التزام توثيقي بعدها يفسّخها).
 - **حدود R37 (لا تُتجاوز ولا تُلمَّح):** لا ادّعاء تسليم على قناة حقيقية (Telegram/mail = **NOT RUN** حتى يقدّم المالك الأسرار)، لا ادّعاء استمرارية 24/7، لا ادّعاء عمل فوق شبكة عامة أو استضافة (الحالة `LAB-ONLY`)، لا شراء عتاد M3، لا اختبار ميداني M4. **شقّ المصدر ما زال مفتوحاً (R35):** AC-1 تُقاس **نقلاً** بمصدر مُحقَن، لا GPS حقيقي.
 - **AC-3 في هذه المرحلة على قناة `web` وحدها** (قناة Traccar `web` قناة حقيقية مُثبَتة التخزين والتوصيل)، والبريد/تيليجرام يُكتب بجانبها **NOT RUN** لا FAIL.
 - **CI:** `build-release.yml` يعمل على `main`/`develop` فقط، والحساب معطّل أصلاً (الر14: «recent account payments have failed»). لذا **بوابة التحقق الأساسية محلية**: `npm run lint` + `npm run build` + `npm test` + `npm run test:app` بأعداد مرئية. أي خطوة CI تُذكر تُكتب **NOT RUN — CI unavailable (account billing)**، ولا تُعلَّق بوابة مهمة عليها.
@@ -121,7 +121,8 @@
 
 ```bash
 git fetch origin
-git rev-parse origin/lab/m0        # المتوقع: 24f76ba… (مرجع R37/تقرير المراجعة)
+git rev-parse origin/lab/m0        # نقطة الاشتقاق — الصق الناتج حرفيّاً في أول سطر بالسجل
+git rev-list --count origin/lab/m0 # تأكد أن رأس lab/m0 هو التزام الخطة (docs(M1): implementation plan …)
 git checkout -b m1/guardian-app origin/lab/m0
 ```
 
