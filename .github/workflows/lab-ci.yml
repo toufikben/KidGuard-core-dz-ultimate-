@@ -39,12 +39,12 @@ jobs:
       # Node print `tests 1 / pass 1 / fail 0` and exit 0, so the old filename guard AND a `>= 1`
       # count both go green on one stub file (I reproduced that here: one empty test file reported
       # `tests 1`, gate exit 0). The gate is therefore a floor on the reported count, set from the
-      # measured suite size on 2026-10-08 (`npm run test:lab` -> tests 94). Dropping below it is a
+      # measured suite size on 2026-10-08 (`npm run test:lab` -> tests 96). Dropping below it is a
       # deliberate act: raise the floor in the same commit, or the run goes red.
       # pipefail is what stops `tee` from swallowing a failing suite behind a 0 exit.
       - name: Run lab tests and enforce the measured test-count floor
         env:
-          EXPECTED_MIN_TESTS: "94"
+          EXPECTED_MIN_TESTS: "96"
         run: |
           set -o pipefail
           npm run test:lab 2>&1 | tee lab-tests.log
