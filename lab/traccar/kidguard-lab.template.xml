@@ -27,10 +27,12 @@
 
     <entry key='mail.smtp.host'></entry>
     <!-- true => Traccar swaps SmtpMailManager for LogMailManager: one INFO line per recipient and
-         no SMTP socket, so fan-out is observable with no real mail account (evidence 005 §3).
+         no SMTP socket, so fan-out is observable with no real mail account (evidence 005 §2).
          FLIP THIS TO false BEFORE ANY REAL-DELIVERY TEST (Task 8 Part B): while it is true the
          server logs "Email sent / To:" for every recipient it selected and delivers nothing, so
-         that line alone can never prove a message arrived — it is a ready-made false PASS. -->
+         that line alone can never prove a message arrived — it is a ready-made false PASS.
+         check-config.mjs now pins this key to true, so the flip fails the lab check on purpose: it
+         belongs to Task 8 Part B with a recorded owner decision, not to a sed edit. -->
     <entry key='mail.debug'>true</entry>
 
     <!-- Measured (evidence 005 §6b, spec §9.12): delivery calls the geocoder synchronously and it

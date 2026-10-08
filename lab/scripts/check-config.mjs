@@ -24,6 +24,11 @@ const RULES = {
   },
   'geocoder.enable': (v) => v === 'false'
     || 'must be false in the lab (delivery blocks on it and leaks an address resolved from the coordinates)',
+  // MainModule.provideMailManager returns LogMailManager when mail.debug is true, so the lab never
+  // opens an SMTP socket. Flipping it is the deliberate Task 8 Part B step (real delivery), which is
+  // why this is a hard failure rather than a warning: it should only happen with a recorded decision.
+  'mail.debug': (v) => v === 'true'
+    || 'must be true in the lab (false makes Traccar dial the configured SMTP server; and while it is true, its "Email sent / To:" log lines prove selection, never delivery)',
   'event.forward.url': (v) => /^http:\/\/(127\.0\.0\.1|\$\{LAB_SINK_HOST\}|localhost):\$\{LAB_FORWARD_PORT\}\/alert$|^http:\/\/(127\.0\.0\.1|localhost|\d{1,3}(\.\d{1,3}){3}):\d+\/alert$/.test(v)
     || 'must POST to the lab sink on http://<host>:<port>/alert',
   'event.forward.header': (v) => {

@@ -153,3 +153,19 @@ test('validation rejects a key defined twice', () => {
   assert.ok(errors.some((e => /geocoder\.enable/.test(e) && /twice|duplicate/i.test(e))),
     errors.join('\n'));
 });
+
+// mail.debug=true is what keeps the lab from opening an SMTP socket (Traccar's MainModule returns
+// LogMailManager when it is true). The template comment demands it be flipped for Task 8 Part B, so
+// an unguarded key is one sed away from a lab run dialling a real mail server — and while it is true
+// the server logs "Email sent / To:" without delivering, which is why a delivery claim may never be
+// read from that line. Same class of hole as geocoder.enable was: the value lived only in prose.
+test('validation pins mail.debug to true in the lab', () => {
+  const bad = template.replace(
+    "<entry key='mail.debug'>true</entry>",
+    '<entry key="mail.debug">false</entry>');
+  assert.notEqual(bad, template);
+  const { errors, entries } = validateConfig(bad, { allowPlaceholders: true });
+  assert.equal(entries.get('mail.debug'), 'false',
+    `a double-quoted mail.debug must be parsed, got ${JSON.stringify(entries.get('mail.debug'))}`);
+  assert.ok(errors.some((e) => /mail\.debug: must be true/.test(e)), errors.join('\n'));
+});
