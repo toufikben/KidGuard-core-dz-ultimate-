@@ -94,6 +94,25 @@ LAB_API_URL=http://127.0.0.1:8082/api LAB_OSMAND_HOST=127.0.0.1 LAB_OSMAND_PORT=
 مفتوحٌ عمداً على `0.0.0.0` لأن الهاتف يجب أن يرسل المواضع. **NOT RUN:** اختبار من مضيف ثانٍ فعلي
 (لا يوجد: لا Docker ولا CI ولا خادم ثانٍ). يبقى فتح `:5055` على LAN قراراً يُراجع قبل الإنتاج.
 
+**قراءة تشغيل بارد (الخادم موقوف) — قِيست `2026-10-08T18:38:33Z` على `2070f4e`.** النص الحرفي للمخرجات،
+مع سبب أن الخادم مطفأ من نفس الجلسة:
+```bash
+$ npm run lab:security --silent >/tmp/sec.out 2>/tmp/sec.err ; rc=$? ; cat /tmp/sec.out ; echo "REAL_EXIT=$rc"
+FAIL  unauthenticated-devices-401  [error: fetch failed]
+FAIL  self-registration-closed  [error: fetch failed]
+FAIL  unknown-device-rejected  [error: fetch failed]
+PASS  web-ui-on-localhost-only  [configured API host is 127.0.0.1; this proves only that the lab is pointed at loopback, NOT that Traccar refuses LAN clients (verify web.address=127.0.0.1 from another host; use adb reverse for the phone)]
+1/4 security checks passed
+REAL_EXIT=1
+$ netstat -ano | grep -E ':8082|:5055'   # → لا سطر: لا مستمع على المنفذين
+```
+**لا تُقرأ هذه السطور ثلاث ثغرات:** `error: fetch failed` معناه أن الفحص **لم يُنفَّذ** لأن لا خادم يسمع
+على `:8082`/`:5055` — أي **NOT RUN** لا FAIL. والفحص الرابع ينجح على التشغيل البارد لأنه يقرأ متغيّر
+البيئة ولا يلمس الشبكة، فـ`1/4` خادمٍ موقوف ليست تردّياً في الأمن بل علامة أن الخادم مطفأ. رمز الخروج
+يظل **1** (وهو المقصود: لا شهادة أمان بلا تنفيذ) — وقيسه يُجرى على الأمر نفسه لا على أنبوب إلى `tail`،
+فالأنبوب يقيس `tail`. الدليل على 4/4 هو `004-security.txt` وهو من تشغيلٍ والخادم عامل؛ إن رأيت
+`fetch failed` فأشعل `run.sh` وأعد القراءة ولا تكتب الحكم من هذه اللقطة.
+
 ## الهاتف مصدراً — مسار USB/adb بلا تثبيت (Task 9، قرار المالك R35)
 إثبات المسار: مواضع تُولَّد **من داخل الهاتف** ⇒ `127.0.0.1:5055` عبر `adb reverse` فوق USB ⇒
 Traccar (`protocol: osmand`, الجهاز `lab-child-1`) ⇒ حدث `geofenceExit` حقيقي ⇒ الحوض. الدليل
