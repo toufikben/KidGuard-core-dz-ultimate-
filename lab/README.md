@@ -236,15 +236,21 @@ loopback مباشرة؛ نفق
 **التشغيل** (البيئة من ملفّ الأسرار المحليّ المُتتبَّع بـgit-ignore؛ **لا تُكتب كلمة المرور في سطر الأمر**):
 ```bash
 set -a; source lab/traccar/fanout.env; set +a      # لا يُطبع محتواه؛ المصدر الوحيد للبيئة
-node tools/m1/api-probe.mjs > /tmp/api-probe.txt 2>&1; echo "PROBE_EXIT=$?"
-# أثناء نافذة المقبس (20ث) شغِّل في صدفة ثانية لتوليد بثّ حيّ داخل النافذة:
-#   npm run lab:scenario -- school-exit --speed=1
+node tools/m1/api-probe.mjs > /tmp/api-probe.txt 2>&1 &      # الأداة في الخلفية (نافذتها ~150ث)
+sleep 3
+npm run lab:scenario -- school-exit --speed=1                 # في المقدّمة، داخل نافذة المقبس
+wait %1; echo "PROBE_EXIT=$?"
 grep -c 'PASSWORD\|Basic ' /tmp/api-probe.txt      # المتوقع 0 — لا سرّ في المخرجات
+grep -c 'JSESSIONID=' /tmp/api-probe.txt           # المتوقع 0 — اسم الكوكيز يُطبع بلا قيمته
 ```
 لا سطر `FETCH FAILED` متوقَّع (الخادم قائم)؛ إن ظهر فالحكم **NOT RUN** لا نتيجة — لا يُستخرَج جدول
-حقول من خادم غير قائم. **حدود مقاسة ومُعلَّمة في 007:** `GET /session` (تحت Basic) و`GET /events`
-رجعا **404**، وغلاف إطار **حدث geofenceExit عبر المقبس لم يُقَس** (خروج المنطقة يقع عند `t+90s` خارج
-نافذة الـ20ث) — يُترك **NOT RUN** صراحةً ولا يُخمَّن شكله.
+حقول من خادم غير قائم. **ملاحظة (جولة تصحيح 1):** الأداة تضمن قبل المقبس أن اشتراك
+`lab-geofenceExit` يحوي مُشعِر `web` (`PUT /notifications/{id}`) — فمُشعِر الويب هو وحده الذي يدفع
+الأحداث إلى `/api/socket`؛ بدون `web` لا يصل أي إطار حدث مهما وُسِّعت النافذة. **الحدود المُصحَّحة في
+007:** إطار `geofenceExit` صار **مقيساً** بغلافه وحقوله (§5.1 و§9)، و`GET /session` يرجع 404 تحت
+Basic **بالنظام** (المسار `@PermitAll` ويطلب توكن أو جلسة؛ `SessionResource.java:77-104`)، وهُويّة
+التطبيق تُقاس عبر `GET /session?token=` (200) أو `POST /session` (200 + كوكيز `JSESSIONID`)؛
+و`/api/events` لا مجموعة فيه في 6.16.0 وقراءة الاشتراكات المستقرة تتم عبر `/api/notifications`.
 
 **التنظيف:** تسحب الأداة توكنها بنفسها في آخرها (`POST /api/session/token/revoke`→204) فلا يبقى رمزٌ
 يعمر بعدها؛ لا شيء على القرص يُزال (`fanout.env` يبقى وهو مُتجاهَل، و`lab-data/` لا تُمَسّ، والخادم
