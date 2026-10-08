@@ -217,9 +217,11 @@ NO-FIREWALL-RULE-LEFT
 
 ## 8. CI
 
-**NOT RUN — CI unavailable (account billing).** الدفعة على `lab/m0` الخاصة بهذا العمل
-(رقمها ومسار `steps: []` المحقَّق بـ`gh run view … --json jobs` يُذكران في تقرير المهمة)، وذلك
-بالنمط نفسه الموثق لسبع دفعات سابقة في `005-fanout.md` §10. لا يُكتب PASS للـCI أبداً.
+**NOT RUN — CI unavailable (account billing).** دفعة هذا العمل على `lab/m0` رقمها **`37752677759`**
+(لـcommit `8377adb`)؛ تحقّق بـ`gh run view 37752677759 --repo toufikben/KidGuard-core-dz-ultimate- --json jobs`:
+`{"name":"lab","conclusion":"failure","steps":0}` — صفر خطوات في 3ث (`08:51:52Z → 08:51:55Z`)، وهو
+نفس عطل الفوترة الموثق لسبع دفعات سابقة في `005-fanout.md` §10. لا يُكتب PASS للـCI أبداً؛ كل
+أرقام الاختبارات في هذا الملف محلية من هذا الجهاز.
 
 ## 9. ما لا يثبته هذا الملف إطلاقاً
 
