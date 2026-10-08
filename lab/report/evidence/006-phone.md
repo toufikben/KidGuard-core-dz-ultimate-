@@ -44,7 +44,7 @@
 
 ## 2. الأدوات والإعداد (قيم مقاسة لا مفترضة)
 
-- adb **ليس على PATH**؛ المستعمل: `ADB="/c/Users/Administrator/AppData/Local/Android/Sdk/platform-tools/adb.exe"`
+- adb **ليس على PATH**؛ المستعمل: `ADB="$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe"`
   — المخرجات: `Android Debug Bridge version 1.0.41 / Version 37.0.1-15733141`.
 - `adb devices -l`: سطر واحد حالته `device`، product `RMX3910` (المعرّف الكامل محرَّف عمداً؛ آخر
   أربع خانات `HMS8`).

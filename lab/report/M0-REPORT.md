@@ -6,11 +6,15 @@ JDK 25، H2)؛ ما لم يُقَس موسوم **NOT RUN** ولا يُدّعى. 
 ## بوابة (§14): geofenceExit حقيقي من مصدر حقيقي
 
 - [x] NDJSON يحوي سطر `geofenceExit` حقيقي (ملف: `lab/artifacts/events.ndjson` — 10 أسطر، منها 4
-  أسطر `geofenceExit` مُنتِجة من خادم Traccar 6.16.0 عامِل ومارّة عبر `event.forward.url` إلى الحوض)
+  أسطر `geofenceExit` مُنتِجة من خادم Traccar 6.16.0 عامِل ومارّة عبر `event.forward.url` إلى الحوض).
+  `lab/artifacts/` محليّ وغير مرفوع، فيقابل أثرين مرفوعين يُراجَعان من نسخة مستنسخة:
+  `lab/fixtures/gate-events.ndjson` (نفس السطور العشرة، والبصمتان متطابقتان: `md5sum` لهما
+  `8c9bc250…`) و`lab/report/evidence/003-scenario-run.txt`
+  (مخرجات العدّاد نفسها).
 - المصدر: [x] اصطناعي osmand  [ ] هاتف المالك (Traccar Client)  [ ] جهاز بشريحة
 
 **قراءة دقيقة للبوابة (سؤال «المسار» ينفصل عن سؤال «المصدر»):**
-- **سؤال المسار: مُثبت.** جولة Task 9 مرّت بمصدر حقيقي (هاتف Realme معرّف بآخر أربع خانات `HMS8`) فوق
+- **سؤال المسار: مُثبت.** جولة Task 9 مرّت **بجهاز حقيقي** (هاتف Realme معرّف بآخر أربع خانات `HMS8`) فوق
   نفق USB (`adb reverse`) ⇒ خادم Traccar حقيقي ⇒ حدث `geofenceExit` حقيقي ⇒ الحوض، تحت 30ث
   (الدليل `lab/report/evidence/006-phone.md`؛ أزمنته في §4 منه: `geofenceExit` source→sink **4750ms**).
 - **سؤال المصدر: غير مثبت.** إحداثيات جولة الهاتف **حُقنت يدويّاً من صدفة Android** (أمر `nc`)، لا من

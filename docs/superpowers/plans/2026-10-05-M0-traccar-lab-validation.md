@@ -1941,13 +1941,13 @@ git push && gh run list --branch lab/m0 --limit 1
 
 **قياسات هذا الجهاز المأخوذة فعلاً (2026-10-05، بـ`ipconfig //all` و`route print` و`adb devices`) — لا تفترض شبكة WiFi:**
 - **لا وجود لمحول Wi‑Fi في هذا الحاسوب.** الواجهتان الوحيدتان: `Realtek PCIe GbE` حالتها `Media disconnected`، و`Remote NDIS based Internet Sharing Device` = **ربط هاتفي عبر USB (tethering)**، عنوانه `10.220.50.85/24` وgateway `10.220.50.82` (هو الهاتف).
-- `adb` **ليس على PATH**: استعمل `ADB="/c/Users/Administrator/AppData/Local/Android/Sdk/platform-tools/adb.exe"` (الإصدار 1.0.41 / 37.0.1). الجهاز ظاهر بسطر واحد حالته `device`. **لا تنشر رقم الجهاز الكامل في ملفات المستودع؛ اكتفِ بآخر أربع خانات.**
+- `adb` **ليس على PATH**: استعمل `ADB="$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe"` (الإصدار 1.0.41 / 37.0.1). الجهاز ظاهر بسطر واحد حالته `device`. **لا تنشر رقم الجهاز الكامل في ملفات المستودع؛ اكتفِ بآخر أربع خانات.**
 - النتيجة العملية: مسار المعمل الأساسي هو **`adb reverse` فوق USB** — لا يفتح منفذاً على أي شبكة ولا يحتاج قاعدة جدار حماية. عنوان الـtethering يتغيّر كل جلسة، فلا تُثبّته في أي ملف.
 
 - [ ] **Step 1: وصل الهاتف بـUSB وجعل المسار خاصاً بلا جدار حماية**
 
 ```bash
-ADB="/c/Users/Administrator/AppData/Local/Android/Sdk/platform-tools/adb.exe"
+ADB="$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe"
 "$ADB" devices                    # Expected: سطر واحد حالته device (اكتفِ بآخر 4 خانات في الدليل)
 netstat -ano | grep ":5055"       # Expected: استماع على 127.0.0.1:5055 (هذا كافٍ هنا، لا نحتاج 0.0.0.0)
 "$ADB" reverse tcp:5055 tcp:5055  # الهاتف يرسل إلى 127.0.0.1:5055 فيُوصَل إلى خادم الحاسوب عبر USB

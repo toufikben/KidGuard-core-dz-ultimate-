@@ -96,7 +96,7 @@ Traccar (`protocol: osmand`, الجهاز `lab-child-1`) ⇒ حدث `geofenceExi
   `adb shell dumpsys power | grep mWakefulness` (متوقع `Awake`) و`dumpsys window | grep mInputRestricted`
   (متوقع `false`). إن كان الجهاز مقفلاً: أوقف الخطوات التي تحتاج الشاشة واطلب من المالك فتحه يدويّاً.
 - **لا تنشر المعرّف الكامل للجهاز في أي ملف مستودع؛ آخر أربع خانات فقط.**
-- adb ليس على PATH: `ADB="/c/Users/Administrator/AppData/Local/Android/Sdk/platform-tools/adb.exe"`
+- adb ليس على PATH: `ADB="$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe"`
   (v1.0.41 / 37.0.1). لا Wi‑Fi في هذا الحاسوب؛ الوصول الوحيد هو USB — **لا تفتح منفذاً على LAN ولا
   تغيّر `web.port` ولا تضف قاعدة جدار حماية**؛ إن أُجبرت على tethering فاحذف قاعدتك في نفس الجلسة
   وألحق مخرج الحذف.
@@ -105,7 +105,7 @@ Traccar (`protocol: osmand`, الجهاز `lab-child-1`) ⇒ حدث `geofenceExi
   قاس أنه يقبل اتصالاً من LAN (بينما `:8082` مرفوض من LAN) — قرار كشف يُراجَع قبل الإنتاج، لا مهمة هذه الجولة.
 
 ```bash
-ADB="/c/Users/Administrator/AppData/Local/Android/Sdk/platform-tools/adb.exe"
+ADB="$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe"
 "$ADB" devices -l                          # سطر واحد device (المعرّف يُحرَّف لآخر 4 خانات)
 "$ADB" reverse tcp:5055 tcp:5055           # مواضع osmand
 "$ADB" reverse tcp:8082 tcp:8082           # لوحة الإدارة من متصفح الهاتف
