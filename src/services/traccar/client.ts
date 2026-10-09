@@ -29,18 +29,43 @@ export function createTraccarClient({
     return `${path}?${search}`;
   };
 
-  async function request<T>(method: string, path: string, options: { params?: Record<string, string | number>; body?: unknown } = {}): Promise<T> {
+  async function request<T>(
+    method: string,
+    path: string,
+    options: {
+      params?: Record<string, string | number>;
+      body?: unknown;
+      // Form fields for Traccar's @FormParam endpoints (POST /api/session, /api/session/token,
+      // /api/session/token/revoke). Kept separate from `body` so the content-type below can never
+      // disagree with the encoding actually put on the wire.
+      form?: Record<string, string | number>;
+    } = {},
+  ): Promise<T> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    // btoa, not Node's base64 helper: this bundle runs in a browser (owner's PC + a phone over
+    // `adb reverse`) where the Node global is undefined and the first request would throw
+    // ReferenceError. btoa exists in both runtimes (Node >= 16, measured on Node 24.19 here), so
+    // there is exactly one encoding path. The guard test in tests/app/client.test.ts enforces it.
+    // TextEncoder first because btoa is byte-oriented: an Arabic password (the product is
+    // Arabic-first) makes bare btoa throw InvalidCharacterError, while the server decodes the
+    // header as UTF-8 — so the bytes handed to btoa below are UTF-8, as the Node helper produced.
+    const authorization = 'Basic ' + btoa(String.fromCharCode(...new TextEncoder().encode(`${credentials.email}:${credentials.password}`)));
     let response: Response;
     try {
       response = await fetch(`${baseUrl}${withQuery(path, options.params)}`, {
         method,
         headers: {
-          authorization: 'Basic ' + Buffer.from(`${credentials.email}:${credentials.password}`).toString('base64'),
-          ...(options.body === undefined ? {} : { 'content-type': 'application/json' }),
+          authorization,
+          ...(options.form !== undefined
+            ? { 'content-type': 'application/x-www-form-urlencoded' }
+            : options.body === undefined ? {} : { 'content-type': 'application/json' }),
         },
-        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        // URLSearchParams applies form encoding (spaces as `+`, per application/x-www-form-urlencoded)
+        // and coerces numbers; key order is the caller's, since the server matches fields by name.
+        body: options.form !== undefined
+          ? new URLSearchParams(Object.entries(options.form).map(([key, value]) => [key, String(value)]))
+          : options.body === undefined ? undefined : JSON.stringify(options.body),
         signal: controller.signal,
       });
     } catch (error) {
@@ -66,6 +91,8 @@ export function createTraccarClient({
     post: <T>(path: string, body: unknown) => request<T>('POST', path, { body }),
     put: <T>(path: string, body: unknown) => request<T>('PUT', path, { body }),
     remove: (path: string, params?: Record<string, string | number>) => request<null>('DELETE', path, { params }),
+    // Session routes are @FormParam, not JSON: same timeout, same abort, same secret-free errors.
+    postForm: <T>(path: string, params: Record<string, string | number>) => request<T>('POST', path, { form: params }),
   };
 }
 
