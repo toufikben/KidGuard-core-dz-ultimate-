@@ -1,5 +1,11 @@
 export type Language = 'ar' | 'en' | 'fr';
 
+// The parity-guarded trilingual catalog (Task 5). Consumers take the CHECKED dictionary — every key
+// carries ar/fr/en and the guard in tests/app/positions.test.ts fails any that does not — instead of
+// reaching for the legacy flat `translations` object below. New copy goes in catalog.ts, not here.
+export { catalog, translate } from './catalog.ts';
+export type { CatalogLang, CatalogEntry } from './catalog.ts';
+
 export const translations = {
   ar: {
     appName: 'كيدغارد بوست المطور - KidGuard Core DZ Pro',
