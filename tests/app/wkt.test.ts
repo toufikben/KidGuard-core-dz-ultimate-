@@ -65,6 +65,33 @@ test('a route zone with no declared buffer is refused, not silently given the se
   assert.ok(errors.some((e) => /polylineDistance|هامش/.test(e)), errors.join('\n'));
 });
 
+// `bufferMeters: 0` is a DIFFERENT bug from omitting it: 0 is a real value the server honours, so a
+// zero-width corridor never contains the child and no geofenceExit ever fires (AC-1 would silently
+// never trigger). `undefined` above and `0` here are separate branches of wkt.ts:77, so each needs
+// its own test. The assertion names the REASON (`polylineDistance`), not the word «هامش», which also
+// appears in the "too small" message: a loose regex let a mutation that deletes the `=== 0` clause
+// pass green — the zone is then reported as merely under 100 m, which is the wrong diagnosis.
+test('an explicit zero-width route buffer is refused as unusable, not as merely too small', () => {
+  const errors = validateZone({
+    type: 'route',
+    geometry: { kind: 'linestring', points: [{ lat: 36.7538, lon: 3.0588 }, { lat: 36.7545, lon: 3.0595 }], bufferMeters: 0 },
+  });
+  assert.ok(errors.some((e) => /polylineDistance/.test(e)), errors.join('\n'));
+  assert.ok(!errors.some((e) => /≥\s*100/.test(e)), `wrong diagnosis: ${errors.join('\n')}`);
+});
+
+// Task 8's hand-off: the ONLY safe order is validate-then-emit, because `toRouteWkt` answers a
+// missing buffer with `polylineDistance: 0` (wkt.ts:32) rather than refusing. This test pins that
+// the geometry the emitter would accept-with-0 is the same geometry the validator rejects for that
+// named reason, so a zone editor that forgets validateZone cannot reach the server with a corridor
+// nobody exits.
+test('what the emitter writes as 0 is what the validator rejects (the Task 8 guard is real)', () => {
+  const points = [{ lat: 36.7538, lon: 3.0588 }, { lat: 36.7545, lon: 3.0595 }];
+  assert.equal(toRouteWkt({ points }).attributes.polylineDistance, 0);
+  const errors = validateZone({ type: 'route', geometry: { kind: 'linestring', points } });
+  assert.ok(errors.some((e) => /polylineDistance/.test(e)), errors.join('\n'));
+});
+
 test('a two-point polygon is refused by us before the server refuses it (GeofencePolygon.java:146)', () => {
   const errors = validateZone({ type: 'park', geometry: { kind: 'polygon', points: [{ lat: 36.75, lon: 3.05 }, { lat: 36.76, lon: 3.06 }] } });
   assert.ok(errors.some((e) => /3/.test(e)), errors.join('\n'));
