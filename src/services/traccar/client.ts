@@ -39,6 +39,15 @@ export function createTraccarClient({
       // /api/session/token/revoke). Kept separate from `body` so the content-type below can never
       // disagree with the encoding actually put on the wire.
       form?: Record<string, string | number>;
+      // Reads the body as text rather than JSON. Used only by the long-lived-token route, because
+      // its 200 body IS the token: SessionResource.java:152 returns a String, openapi.yaml documents
+      // /session/token as `200 text/plain string`, and the 007 §9 probe round-tripped that raw body
+      // into `GET /session?token=` and measured 200 — so it is bare text, not a JSON document.
+      // Leaving it on the JSON path would fail as badpayload AND that error's 40-character excerpt
+      // would put the first characters of a live token into an Error.message. The token gets its own
+      // reader here so that there stays exactly one request path: same timeout, same abort, same
+      // secret-free errors.
+      text?: boolean;
     } = {},
   ): Promise<T> {
     const controller = new AbortController();
@@ -81,6 +90,9 @@ export function createTraccarClient({
       // status + a short, secret-free excerpt only (401 bodies can name the account).
       throw new TraccarError(kindFor(response.status), response.status, `HTTP ${response.status}`);
     }
+    // Trimmed on the way out: the 007 §9 probe had to trim this body before using it, and a token
+    // carrying a trailing newline is a token the socket will not accept.
+    if (options.text) return text.trim() as T;
     if (text === '') return null as T;
     try { return JSON.parse(text) as T; }
     catch { throw new TraccarError('badpayload', response.status, `HTTP ${response.status} returned non-JSON (${text.slice(0, 40)})`); }
@@ -93,6 +105,9 @@ export function createTraccarClient({
     remove: (path: string, params?: Record<string, string | number>) => request<null>('DELETE', path, { params }),
     // Session routes are @FormParam, not JSON: same timeout, same abort, same secret-free errors.
     postForm: <T>(path: string, params: Record<string, string | number>) => request<T>('POST', path, { form: params }),
+    // ... and POST /api/session/token answers text/plain with the token itself, so it is read as
+    // text through this same request path — never with a second fetch call outside the client.
+    postFormText: (path: string, params: Record<string, string | number>) => request<string>('POST', path, { form: params, text: true }),
   };
 }
 
