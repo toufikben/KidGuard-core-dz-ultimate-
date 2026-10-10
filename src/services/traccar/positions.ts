@@ -3,7 +3,7 @@
 // positions as data and never touches the network (fetching is client.ts's job, Task 3).
 //
 // Three binding measurements shape this file:
-//  - `speed` arrives in KNOTS (M0 + Position.java); one central conversion, no scattered `* 3.6`.
+//  - `speed` arrives in KNOTS (M0 + Position.java); this layer converts knots once (see kmPerHour).
 //  - Age comes from `fixTime`, never `serverTime` (R30: a retransmitted old fix is old however
 //    recently the server received it).
 //  - Freshness thresholds are the spec §12 numbers: aging above 180 s, silent above 300 s.
@@ -27,15 +27,20 @@ const MAX_FUTURE_SKEW_MS = 5_000;
 // must announce the conflict rather than silently render whichever it picked.
 const CONFLICT_DISTANCE_M = 300;
 
-// The one and only knot→km/h conversion (1 knot = 1.852 km/h exactly). Every speed the UI shows
-// routes through here; there is no second `* 3.6` anywhere in the app.
+// The only knots→km/h conversion in the app (1 knot = 1.852 km/h exactly); every Traccar speed the
+// UI shows must route through here. Named debt, not a claim of uniqueness: two legacy m/s→km/h
+// conversions remain outside this layer — src/services/RiskEngine.ts `toKmH` (HTML5 geolocation,
+// genuinely m/s) and src/components/MapView.tsx's `speed > 50 ? speed : speed * 3.6` guess, which
+// cannot tell the two units apart. The task that owns the map replaces that guess with this function.
 export function kmPerHour(position: Pick<ServerPosition, 'speed'>): number {
   return position.speed * 1.852;
 }
 
 // Age in whole seconds, measured from `fixTime` (never `serverTime`). Throws for an unreadable or
-// impossibly future fix so a caller can never turn a broken timestamp into a confident sentence.
+// impossibly future fix, or for a `now` that is not a real clock reading, so a caller can never turn
+// a broken timestamp into a confident sentence.
 export function ageSeconds(position: Pick<ServerPosition, 'fixTime'>, now: number): number {
+  if (!Number.isFinite(now)) throw new Error(`now is not a clock reading: ${now}`);
   const fixMs = Date.parse(position.fixTime);
   if (!Number.isFinite(fixMs)) throw new Error(`unreadable fixTime: ${position.fixTime}`);
   const ageMs = now - fixMs;
@@ -46,24 +51,38 @@ export function ageSeconds(position: Pick<ServerPosition, 'fixTime'>, now: numbe
   return Math.max(0, Math.floor(ageMs / 1000));
 }
 
+// An unknown age is the loudest claim this layer can make, so it must land on the weakest word:
+// NaN satisfies neither `>` comparison, and falling through to 'fresh' would tell a guardian the
+// child was just seen. Non-finite ages are 'silent' — the same sentence a dead source gets.
 export function freshnessOf(age: number): Freshness {
+  if (!Number.isFinite(age)) return 'silent';
   if (age > SILENT_AFTER_SECONDS) return 'silent';
   if (age > AGING_AFTER_SECONDS) return 'aging';
   return 'fresh';
 }
 
+// §12's honest sentence for a source we cannot read: no data, and the location may not be current.
+function noDataLabel(lang: CatalogLang): string {
+  return `${translate('position.noDataFromServer', lang)} — ${translate('position.locationMayNotBeCurrent', lang)}`;
+}
+
 // An honest label for one reading: age plus accuracy radius, degrading to a no-data announcement when
 // the source is silent. It never claims the child is live, safe, or guaranteed — a fresh reading is
 // phrased as "N s ago", and a silent one as "no data from the server, location may not be current".
+// Unlike ageSeconds this never throws: it is what a screen prints, and a screen that throws on a
+// malformed socket reading (Task 10) shows the guardian nothing at all (R-M1-14).
 export function formatPositionLabel(
   position: Pick<ServerPosition, 'fixTime' | 'accuracy'>,
   now: number,
   lang: CatalogLang,
 ): string {
-  const age = ageSeconds(position, now);
-  if (freshnessOf(age) === 'silent') {
-    return `${translate('position.noDataFromServer', lang)} — ${translate('position.locationMayNotBeCurrent', lang)}`;
+  let age: number;
+  try {
+    age = ageSeconds(position, now);
+  } catch {
+    return noDataLabel(lang);
   }
+  if (freshnessOf(age) === 'silent') return noDataLabel(lang);
   const ageText = translate('position.ageSeconds', lang, { age });
   const accuracy = position.accuracy;
   if (accuracy === null || accuracy === undefined || !Number.isFinite(accuracy)) return ageText;
@@ -82,6 +101,13 @@ export function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: 
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+// §3's conflict rule as a predicate on metres, kept separate from resolveSourceReadings so the
+// exact-boundary decision is testable: 300 m is not "more than 300 m apart", so it is not a conflict.
+// Two float coordinates can never land on exactly 300 m, so only this form pins that side.
+export function isSourceConflict(distanceMeters: number): boolean {
+  return distanceMeters > CONFLICT_DISTANCE_M;
+}
+
 // §3: reconcile several source readings (phone, tracker, …) into the one the app may show. If two of
 // them sit more than CONFLICT_DISTANCE_M apart they contradict each other, so we refuse to pick
 // silently and surface the conflict instead. Otherwise the freshest fixTime wins.
@@ -95,7 +121,7 @@ export function resolveSourceReadings(positions: ServerPosition[]): { chosen: Se
       const distance = haversineMeters(
         usable[i].latitude, usable[i].longitude, usable[j].latitude, usable[j].longitude,
       );
-      if (distance > CONFLICT_DISTANCE_M) return { chosen: null, conflict: true };
+      if (isSourceConflict(distance)) return { chosen: null, conflict: true };
     }
   }
 

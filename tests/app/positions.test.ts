@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { kmPerHour, ageSeconds, freshnessOf, formatPositionLabel, resolveSourceReadings } from '../../src/services/traccar/positions.ts';
+import { kmPerHour, ageSeconds, freshnessOf, formatPositionLabel, resolveSourceReadings, isSourceConflict } from '../../src/services/traccar/positions.ts';
 import type { ServerPosition } from '../../src/services/traccar/types.ts';
 
 const now = Date.parse('2026-10-08T12:00:00Z');
@@ -91,8 +91,44 @@ test('two sources straddle the 300 m conflict rule on both sides', () => {
   assert.equal(resolveSourceReadings([base, justOutside]).conflict, true, '356 m is a conflict');
 });
 
+// The straddle above cannot pin the tie: no two float coordinates sit exactly 300 m apart, so
+// flipping `>` to `>=` left the whole suite green (reviewer mutation e). This pins the tie directly.
+test('exactly 300 m is not yet a conflict — the rule is strictly over', () => {
+  assert.equal(isSourceConflict(300), false, '300 is not more than 300, so the app may still pick');
+  assert.equal(isSourceConflict(301), true, 'one metre past the rule is a conflict');
+});
+
 test('a future fixTime is rejected as impossible, same rule as the lab (M0 R19 lineage)', () => {
   assert.throws(() => ageSeconds(pos({ fixTime: '2026-10-08T12:05:00Z' }), now), /future|clock/i);
+});
+
+// Task 10 feeds `now` from a live socket/device clock, so a non-finite `now` is a real input, not a
+// hypothetical. Without the guard the arithmetic yields NaN, which fell through both threshold
+// comparisons and came back labelled 'fresh' — the loudest possible over-claim in a safety product.
+test('a non-finite now is refused by ageSeconds, never turned into a NaN age', () => {
+  assert.throws(() => ageSeconds(pos({}), NaN), /now|clock/i);
+  assert.throws(() => ageSeconds(pos({}), Number.POSITIVE_INFINITY), /now|clock/i);
+});
+
+test('a non-finite age is never called fresh', () => {
+  assert.equal(freshnessOf(Number.NaN), 'silent', 'NaN passed both comparisons and returned fresh');
+  assert.equal(freshnessOf(Number.POSITIVE_INFINITY), 'silent');
+});
+
+// The label is the screen-facing function, so a broken reading must degrade out loud to the no-data
+// sentence rather than throw (a throw here white-outs the map screen) and must never print NaN.
+test('a broken fixTime degrades to the no-data label instead of throwing or printing NaN', () => {
+  for (const fixTime of ['not-a-date', '', null as unknown as string]) {
+    const label = formatPositionLabel(pos({ fixTime }), now, 'ar');
+    assert.match(label, /لا بيانات/, label);
+    assert.doesNotMatch(label, /NaN/, label);
+  }
+});
+
+test('a broken now degrades to the no-data label instead of printing "منذ NaN ثانية"', () => {
+  const label = formatPositionLabel(pos({}), NaN, 'ar');
+  assert.match(label, /لا بيانات/, label);
+  assert.doesNotMatch(label, /NaN/, label);
 });
 
 test('every copy key used by the labels exists in ar, fr and en', async () => {
