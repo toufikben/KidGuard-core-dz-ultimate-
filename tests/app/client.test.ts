@@ -97,6 +97,31 @@ test('a 200 with a non-JSON body is kind=badpayload, not a silent null', async (
   } finally { await srv.close(); }
 });
 
+// R-M1-15 / 008 §3.2. The message used to interpolate `text.slice(0, 40)` — and on /api/session/token
+// that body IS a credential (measured: a bare string declared application/json, so the parse fails on
+// a 200 that succeeded). Deleting the excerpt is what this test measures: put it back and this goes
+// red, while the test above stays green (R-M1-12).
+test('a badpayload message carries the body shape, never the body itself', async () => {
+  const SECRET_BODY = 'RjBEAiBSecretLookingTokenHead0123456789abcdef';
+  const srv = await withServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(SECRET_BODY);
+  });
+  try {
+    const client = createTraccarClient({ baseUrl: srv.url, credentials: { email: 'a@b.example', password: 'x' } });
+    const error = await client.get('/session/token').catch((e) => e as TraccarError);
+    assert.ok(error instanceof TraccarError);
+    assert.equal(error.kind, 'badpayload');
+    // No run of the body's own characters, however short, may reach the message.
+    for (const fragment of [SECRET_BODY.slice(0, 7), SECRET_BODY.slice(7, 14), SECRET_BODY.slice(-8)]) {
+      assert.ok(!error.message.includes(fragment), `message leaked ${fragment}: ${error.message}`);
+    }
+    assert.doesNotMatch(error.message, new RegExp(SECRET_BODY));
+    // And the shape it does report is the one a debugger needs: length + declared content-type.
+    assert.match(error.message, /^HTTP 200 returned non-JSON \(45 bytes, content-type application\/json\)$/, error.message);
+  } finally { await srv.close(); }
+});
+
 test('a hung server becomes kind=timeout, not an infinite spinner', async () => {
   const srv = await withServer(() => { /* never answers */ });
   try {

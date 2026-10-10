@@ -39,14 +39,12 @@ export function createTraccarClient({
       // /api/session/token/revoke). Kept separate from `body` so the content-type below can never
       // disagree with the encoding actually put on the wire.
       form?: Record<string, string | number>;
-      // Reads the body as text rather than JSON. Used only by the long-lived-token route, because
-      // its 200 body IS the token: SessionResource.java:152 returns a String, openapi.yaml documents
-      // /session/token as `200 text/plain string`, and the 007 §9 probe round-tripped that raw body
-      // into `GET /session?token=` and measured 200 — so it is bare text, not a JSON document.
-      // Leaving it on the JSON path would fail as badpayload AND that error's 40-character excerpt
-      // would put the first characters of a live token into an Error.message. The token gets its own
-      // reader here so that there stays exactly one request path: same timeout, same abort, same
-      // secret-free errors.
+      // Reads the body as text rather than JSON. Used by the long-lived-token route: measured on the
+      // live lab (008 §3.1) that `POST /api/session/token` answers **a bare string whose declared
+      // content-type is `application/json`** — so JSON.parse turns that 200 into badpayload. (The
+      // openapi description says `200 text/plain string`; the running server's header says otherwise,
+      // and the header is what this client has to agree with.) 008 measured the round trip too: the
+      // minted token authenticates through `GET /session?token=` with 200, and a revoked one with 401.
       text?: boolean;
     } = {},
   ): Promise<T> {
@@ -87,7 +85,9 @@ export function createTraccarClient({
 
     const text = await response.text();
     if (!response.ok) {
-      // status + a short, secret-free excerpt only (401 bodies can name the account).
+      // The status code and nothing else. Measured (008 §4): a wrong password answers 401 with a
+      // 5824-byte body that is not JSON — it does not name the account, but no error body is read
+      // into a message here either, so nothing a future server puts in one can reach a log.
       throw new TraccarError(kindFor(response.status), response.status, `HTTP ${response.status}`);
     }
     // Trimmed on the way out: the 007 §9 probe had to trim this body before using it, and a token
@@ -95,7 +95,14 @@ export function createTraccarClient({
     if (options.text) return text.trim() as T;
     if (text === '') return null as T;
     try { return JSON.parse(text) as T; }
-    catch { throw new TraccarError('badpayload', response.status, `HTTP ${response.status} returned non-JSON (${text.slice(0, 40)})`); }
+    // Body length and content-type only — never any of the body's own characters. This branch fires
+    // on a SUCCESSFUL token mint (008 §3.1: /session/token answers a bare string under
+    // `application/json`), where the first characters of the body are the first characters of a live
+    // credential. The excerpt that used to be interpolated here was 40 such characters.
+    catch {
+      const contentType = response.headers.get('content-type') ?? 'unknown';
+      throw new TraccarError('badpayload', response.status, `HTTP ${response.status} returned non-JSON (${text.length} bytes, content-type ${contentType})`);
+    }
   }
 
   return {
@@ -105,8 +112,9 @@ export function createTraccarClient({
     remove: (path: string, params?: Record<string, string | number>) => request<null>('DELETE', path, { params }),
     // Session routes are @FormParam, not JSON: same timeout, same abort, same secret-free errors.
     postForm: <T>(path: string, params: Record<string, string | number>) => request<T>('POST', path, { form: params }),
-    // ... and POST /api/session/token answers text/plain with the token itself, so it is read as
-    // text through this same request path — never with a second fetch call outside the client.
+    // POST /api/session/token is also @FormParam, but its 200 body is the token itself — 008 measured
+    // it as a bare string declared `application/json`, which the JSON path cannot read. Text comes
+    // back through this same request path, never through a second fetch call outside the client.
     postFormText: (path: string, params: Record<string, string | number>) => request<string>('POST', path, { form: params, text: true }),
   };
 }

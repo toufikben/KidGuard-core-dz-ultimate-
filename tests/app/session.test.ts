@@ -84,7 +84,10 @@ const sessionRoutes = () =>
     if (seen.method === 'POST' && seen.url === '/api/session') return { status: 200, body: USER_JSON };
     if (seen.method === 'DELETE' && seen.url === '/api/session') return { status: 204, body: '' };
     if (seen.method === 'POST' && seen.url === '/api/session/token') {
-      return { status: 200, body: FAKE_TOKEN, contentType: 'text/plain' };
+      // 008 §3.1 measured the running server: the token body is a BARE STRING whose declared
+      // content-type is `application/json`. A fake must not declare text/plain — that would let the
+      // client look right for a reason the server does not give it.
+      return { status: 200, body: FAKE_TOKEN, contentType: 'application/json' };
     }
     if (seen.method === 'POST' && seen.url === '/api/session/token/revoke') return { status: 204, body: '' };
     if (seen.method === 'GET' && seen.url.startsWith('/api/session')) return { status: 200, body: USER_JSON };
@@ -98,7 +101,7 @@ const sessionRoutesWithDeadIdentity = (seen: Seen): Outcome => {
   if (seen.method === 'POST' && seen.url === '/api/session') return { status: 200, body: USER_JSON };
   if (seen.method === 'DELETE' && seen.url === '/api/session') return { status: 204, body: '' };
   if (seen.method === 'POST' && seen.url === '/api/session/token') {
-    return { status: 200, body: FAKE_TOKEN, contentType: 'text/plain' };
+    return { status: 200, body: FAKE_TOKEN, contentType: 'application/json' }; // as measured in 008 §3.1
   }
   if (seen.method === 'POST' && seen.url === '/api/session/token/revoke') return { status: 204, body: '' };
   if (seen.method === 'GET' && seen.url.startsWith('/api/session')) {
