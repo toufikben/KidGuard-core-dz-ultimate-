@@ -291,7 +291,7 @@ test('session (هـ): signing out revokes a live socket token instead of leaving
   } finally { await srv.close(); resetSession(); }
 });
 
-test('session (و): mintSocketToken returns the text/plain token and never lets it into a printed line', async () => {
+test('session (و): mintSocketToken returns the bare-string token (declared application/json, 008 §3.1) and never lets it into a printed line', async () => {
   resetSession();
   const srv = await withFakeTraccar(sessionRoutes());
   try {
