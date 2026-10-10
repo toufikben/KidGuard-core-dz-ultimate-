@@ -61,6 +61,18 @@ test('the age+accuracy label is honest in fr and en too, never live/safe/guarant
   for (const label of [fr, en]) assert.doesNotMatch(label, /live|guaranteed|safe|s[eé]ruris/i, label);
 });
 
+// A radius the server never measured must not become a radius on screen: `±-25 م` and `±NaN م` both
+// read as measurements. The age is still true, so the label keeps it and drops the claim.
+test('a negative or non-finite accuracy is dropped, leaving the age without any radius', () => {
+  const fixTime = '2026-10-08T11:59:05Z';
+  for (const accuracy of [-25, Number.NaN, Number.NEGATIVE_INFINITY]) {
+    const label = formatPositionLabel(pos({ fixTime, accuracy }), now, 'ar');
+    assert.match(label, /منذ\s*55/, label);
+    assert.doesNotMatch(label, /±/, `${accuracy}: ${label}`);
+    assert.doesNotMatch(label, /NaN/, `${accuracy}: ${label}`);
+  }
+});
+
 test('a silent source is announced as no-data, not as safety', () => {
   const label = formatPositionLabel(pos({ fixTime: '2026-10-08T11:40:00Z' }), now, 'ar');
   assert.match(label, /لا بيانات|قد لا يكون/);

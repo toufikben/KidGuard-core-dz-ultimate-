@@ -69,8 +69,10 @@ function noDataLabel(lang: CatalogLang): string {
 // An honest label for one reading: age plus accuracy radius, degrading to a no-data announcement when
 // the source is silent. It never claims the child is live, safe, or guaranteed — a fresh reading is
 // phrased as "N s ago", and a silent one as "no data from the server, location may not be current".
-// Unlike ageSeconds this never throws: it is what a screen prints, and a screen that throws on a
-// malformed socket reading (Task 10) shows the guardian nothing at all (R-M1-14).
+// Unlike ageSeconds this never throws on the DATA it is given: a broken fixTime, a broken clock, or an
+// unreadable accuracy degrades into a true sentence rather than taking a screen down (R-M1-14). The
+// `lang` argument is not data — an unknown language still throws from `translate`, and the caller that
+// stores the locale (src/App.tsx reads localStorage) is the place that must validate it.
 export function formatPositionLabel(
   position: Pick<ServerPosition, 'fixTime' | 'accuracy'>,
   now: number,
@@ -85,7 +87,9 @@ export function formatPositionLabel(
   if (freshnessOf(age) === 'silent') return noDataLabel(lang);
   const ageText = translate('position.ageSeconds', lang, { age });
   const accuracy = position.accuracy;
-  if (accuracy === null || accuracy === undefined || !Number.isFinite(accuracy)) return ageText;
+  // A radius is only worth printing when it is a radius: negative or non-finite would read as a
+  // measurement ("±-25 م") when the server actually reported nothing usable.
+  if (accuracy === null || accuracy === undefined || !Number.isFinite(accuracy) || accuracy < 0) return ageText;
   return `${ageText} ${translate('position.accuracyMeters', lang, { accuracy: Math.round(accuracy) })}`;
 }
 
