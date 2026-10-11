@@ -1,481 +1,388 @@
+// src/components/MapView.tsx — the child's position as the SERVER reported it.
+//
+// This component has no source of truth of its own: every fact on it arrives as a prop, and Task 9
+// replaces those props in App.tsx without touching this file. That rule exists because of a
+// measurement, not a preference — the shipped v1.3 build drew a child pin at a fabricated Algiers
+// centre with an «آمن» badge for a position no source ever reported (audited on a guardian's phone,
+// 2026-10-11). A pin therefore requires a real fix, and the drawing code holds no fallback numbers.
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { LocateFixed, Maximize2, ZoomIn, ZoomOut, ChevronDown, ChevronUp, X, MapPin } from 'lucide-react';
-import { LocationPoint, SafeZone, KidState } from '../types';
+import { LocateFixed, Maximize2, ZoomIn, ZoomOut, ChevronDown, X } from 'lucide-react';
+import { haversineMeters, kmPerHour, type Freshness } from '../services/traccar/positions.ts';
+import type { ServerPosition } from '../services/traccar/types.ts';
+import type { Geometry, LatLng } from '../services/traccar/wkt.ts';
+import {
+  CHILD_ICON_SIZE,
+  childFixLatLng,
+  childIconHtml,
+  scaleForZoom,
+  zoomForRing,
+} from './map/childIcon';
+
+export type MapZone = { id: string; name: string; geometry: Geometry };
 
 interface MapViewProps {
-  location: LocationPoint;
-  safeZones: SafeZone[];
-  kidState: KidState;
   childName: string;
-  locationHistory: LocationPoint[];
+  // The chosen reading (Task 5's resolveSourceReadings) or null when no source reported one.
+  position: ServerPosition | null;
+  // Task 5's freshnessOf value; null means there is no reading at all.
+  freshness: Freshness | null;
+  // Task 5's formatPositionLabel output — the only sentence this screen may say about age.
+  label: string | null;
+  zones: MapZone[];
+  history: LatLng[];
+  // §3: two sources more than 300 m apart. The map must announce it, not silently pick one.
+  sourceConflict?: boolean;
   onSelectCoordinates?: (lat: number, lng: number) => void;
-  onChildLocationChange?: (lat: number, lng: number) => void;
 }
 
-// Haversine distance helper in meters
-function isValidCoord(lat: any, lng: any): boolean {
-  return (
-    typeof lat === 'number' &&
-    typeof lng === 'number' &&
-    !isNaN(lat) &&
-    !isNaN(lng) &&
-    Number.isFinite(lat) &&
-    Number.isFinite(lng) &&
-    lat >= -90 &&
-    lat <= 90 &&
-    lng >= -180 &&
-    lng <= 180
-  );
-}
+const ZONE_TONE = '#047857';
+const HISTORY_TONE = '#1d4ed8';
+// Where the map looks when it has nothing to frame. A viewport default, never a child position:
+// the marker code path cannot reach it, because it requires a fix before drawing anything.
+const EMPTY_VIEW: [number, number] = [0, 0];
 
-function safeLat(lat: any, fallback = 36.7538): number {
-  const parsed = typeof lat === 'number' ? lat : parseFloat(lat);
-  return !isNaN(parsed) && Number.isFinite(parsed) && parsed >= -90 && parsed <= 90 ? parsed : fallback;
-}
+const escapeHtml = (value: string) => value
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-function safeLng(lng: any, fallback = 3.0588): number {
-  const parsed = typeof lng === 'number' ? lng : parseFloat(lng);
-  return !isNaN(parsed) && Number.isFinite(parsed) && parsed >= -180 && parsed <= 180 ? parsed : fallback;
-}
-
-function safeNum(val: any, fallback = 10): number {
-  const parsed = typeof val === 'number' ? val : parseFloat(val);
-  return !isNaN(parsed) && Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
-}
-
-function getDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  if (!isValidCoord(lat1, lon1) || !isValidCoord(lat2, lon2)) return 0;
-  const R = 6371000; // Earth radius in meters
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Math.round(R * c);
-}
+const popupRow = (key: string, value: string) => `
+  <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:3px;">
+    <span style="color:#64748b;">${key}</span>
+    <strong style="direction:ltr;">${value}</strong>
+  </div>`;
 
 export const MapView: React.FC<MapViewProps> = ({
-  location,
-  safeZones,
-  kidState,
   childName,
-  locationHistory,
+  position,
+  freshness,
+  label,
+  zones,
+  history,
+  sourceConflict,
   onSelectCoordinates,
-  onChildLocationChange,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const childMarkerRef = useRef<L.Marker | null>(null);
   const accuracyCircleRef = useRef<L.Circle | null>(null);
-  const zoneCirclesRef = useRef<L.Circle[]>([]);
-  const zoneCenterMarkersRef = useRef<L.Marker[]>([]);
+  const zoneLayersRef = useRef<L.Layer[]>([]);
   const historyPolylineRef = useRef<L.Polyline | null>(null);
   const distanceLineRef = useRef<L.Polyline | null>(null);
+  const hasFramedRef = useRef<boolean>(false);
+  const selectCallbackRef = useRef<MapViewProps['onSelectCoordinates']>(onSelectCoordinates);
 
-  // Auto-Follow State (disabled by default so user can pan/zoom freely)
   const [isAutoFollow, setIsAutoFollow] = useState<boolean>(false);
-  // Collapsible Map Legend State (starts collapsed so map is completely clear)
   const [isLegendOpen, setIsLegendOpen] = useState<boolean>(false);
+  // Only used to re-run the update effect when the zoom changes: the ring's metre radius is fixed,
+  // so what the guardian sees of it is a function of the zoom level.
+  const [zoomLevel, setZoomLevel] = useState<number>(1);
 
   useEffect(() => {
-    if (!mapContainerRef.current) return;
+    selectCallbackRef.current = onSelectCoordinates;
+  }, [onSelectCoordinates]);
 
-    if (!mapRef.current) {
-      const initLat = safeLat(location?.latitude, 36.7538);
-      const initLng = safeLng(location?.longitude, 3.0588);
+  useEffect(() => {
+    if (!mapContainerRef.current || mapRef.current) return;
 
-      const map = L.map(mapContainerRef.current, {
-        center: [initLat, initLng],
-        zoom: 16,
-        zoomControl: true,
-      });
+    const map = L.map(mapContainerRef.current, { zoomControl: true });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors | KidGuard DZ',
+      maxZoom: 19,
+    }).addTo(map);
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors | KidGuard DZ',
-        maxZoom: 19,
-      }).addTo(map);
+    map.on('click', (e: L.LeafletMouseEvent) => {
+      const clicked = childFixLatLng(e?.latlng?.lat, e?.latlng?.lng);
+      if (clicked) selectCallbackRef.current?.(clicked[0], clicked[1]);
+    });
 
-      // Select coordinates or click to reposition
-      map.on('click', (e: L.LeafletMouseEvent) => {
-        if (onSelectCoordinates && e?.latlng && isValidCoord(e.latlng.lat, e.latlng.lng)) {
-          onSelectCoordinates(e.latlng.lat, e.latlng.lng);
-        }
-      });
+    // A manual pan or zoom ends auto-follow; the guardian, not the feed, owns the viewport.
+    map.on('dragstart', () => setIsAutoFollow(false));
+    map.on('zoomend', () => {
+      // The ring keeps its metre radius, so its pixel size changes with the zoom by itself.
+      if (mapRef.current) setZoomLevel(mapRef.current.getZoom());
+    });
 
-      // Disable auto-follow automatically if user manually drags or zooms map
-      map.on('dragstart', () => {
-        setIsAutoFollow(false);
-      });
-
-      mapRef.current = map;
-
-      // Force recalculate container size for Leaflet tile rendering
-      setTimeout(() => {
-        if (mapRef.current) {
-          mapRef.current.invalidateSize();
-        }
-      }, 200);
-    }
+    map.setView(EMPTY_VIEW, 1);
+    mapRef.current = map;
+    setTimeout(() => {
+      if (mapRef.current) mapRef.current.invalidateSize();
+    }, 200);
 
     return () => {
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-      }
+      mapRef.current?.remove();
+      mapRef.current = null;
       childMarkerRef.current = null;
       accuracyCircleRef.current = null;
-      zoneCirclesRef.current = [];
-      zoneCenterMarkersRef.current = [];
+      zoneLayersRef.current = [];
       historyPolylineRef.current = null;
       distanceLineRef.current = null;
+      hasFramedRef.current = false;
     };
   }, []);
+
+  const zoneCenter = (zone: MapZone): [number, number] | null =>
+    zone.geometry.kind === 'circle'
+      ? childFixLatLng(zone.geometry.lat, zone.geometry.lon)
+      : null;
+
+  const frameAll = (map: L.Map, fix: [number, number] | null) => {
+    const points: [number, number][] = [];
+    if (fix) points.push(fix);
+    for (const zone of zones || []) {
+      const center = zoneCenter(zone);
+      if (center) points.push(center);
+      if (zone.geometry.kind !== 'circle') {
+        for (const p of zone.geometry.points) {
+          const vertex = childFixLatLng(p.lat, p.lon);
+          if (vertex) points.push(vertex);
+        }
+      }
+    }
+    if (points.length === 0) return false;
+    const bounds = L.latLngBounds(points);
+    if (!bounds.isValid()) return false;
+    map.fitBounds(bounds, { padding: [48, 48], maxZoom: 18 });
+    return true;
+  };
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    try {
-      const childLat = safeLat(location?.latitude, 36.7538);
-      const childLng = safeLng(location?.longitude, 3.0588);
-      const childAccuracy = Math.max(1, safeNum(location?.accuracy, 10));
+    // ── 1. The child: a pin exists only for a real fix ──────────────────────────────────────────
+    const fix = position ? childFixLatLng(position.latitude, position.longitude) : null;
+    const icon = childIconHtml({
+      course: position?.course ?? null,
+      freshness,
+      hasFix: fix !== null,
+    });
 
-      const isViolated = kidState !== 'SAFE' && kidState !== 'RETURNED_TO_SAFE_ZONE';
-
-      // 1. High Visibility Child Pin Avatar Marker
-      const pinBg = isViolated ? '#ef4444' : '#10b981';
-      const pulseBg = isViolated ? 'rgba(239, 68, 68, 0.45)' : 'rgba(16, 185, 129, 0.45)';
-
-      const childPinHtml = `
-        <div style="position: relative; width: 68px; height: 72px; display: flex; flex-direction: column; align-items: center; cursor: grab;">
-          <div style="position: absolute; bottom: -2px; width: 48px; height: 18px; border-radius: 50%; background: ${pulseBg}; animation: ping 1.4s cubic-bezier(0, 0, 0.2, 1) infinite; z-index: 1;"></div>
-          <div style="position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center;">
-            <div style="background: ${pinBg}; color: white; border: 2px solid #ffffff; box-shadow: 0 4px 14px rgba(0,0,0,0.5); padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 900; white-space: nowrap; font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; gap: 4px; line-height: 1;">
-              <span>👦</span>
-              <span>${childName}</span>
-            </div>
-            <div style="width: 36px; height: 36px; background: ${pinBg}; border: 3px solid #ffffff; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; margin-top: -3px;">
-              <div style="transform: rotate(45deg); font-size: 16px; font-weight: bold; color: white;">
-                📍
-              </div>
-            </div>
-          </div>
-        </div>
-      `;
-
-      const customChildIcon = L.divIcon({
-        className: 'child-pin-marker-container',
-        html: childPinHtml,
-        iconSize: [68, 72],
-        iconAnchor: [34, 68],
-        popupAnchor: [0, -60],
+    if (!fix) {
+      if (childMarkerRef.current && map.hasLayer(childMarkerRef.current)) map.removeLayer(childMarkerRef.current);
+      childMarkerRef.current = null;
+      if (accuracyCircleRef.current && map.hasLayer(accuracyCircleRef.current)) map.removeLayer(accuracyCircleRef.current);
+      accuracyCircleRef.current = null;
+    } else {
+      const leafletIcon = L.divIcon({
+        className: 'kg-child-icon',
+        html: icon.html,
+        iconSize: [CHILD_ICON_SIZE, CHILD_ICON_SIZE],
+        iconAnchor: [CHILD_ICON_SIZE / 2, CHILD_ICON_SIZE / 2],
+        popupAnchor: [0, -CHILD_ICON_SIZE / 2],
       });
 
       if (!childMarkerRef.current || !map.hasLayer(childMarkerRef.current)) {
-        const marker = L.marker([childLat, childLng], {
-          icon: customChildIcon,
-          draggable: true,
-          zIndexOffset: 1000,
-        }).addTo(map);
-
-        marker.on('dragend', (e: L.DragEndEvent) => {
-          const newPos = e.target.getLatLng();
-          if (onChildLocationChange && isValidCoord(newPos.lat, newPos.lng)) {
-            onChildLocationChange(newPos.lat, newPos.lng);
-          }
-        });
-
+        const marker = L.marker(fix, { icon: leafletIcon, zIndexOffset: 1000 }).addTo(map);
+        // No `draggable`: a dragged pin used to write a child location nobody reported.
         childMarkerRef.current = marker;
       } else {
-        childMarkerRef.current.setLatLng([childLat, childLng]);
-        childMarkerRef.current.setIcon(customChildIcon);
+        childMarkerRef.current.setLatLng(fix);
+        childMarkerRef.current.setIcon(leafletIcon);
       }
 
-      const speedKmH = location?.speed
-        ? Math.round(location.speed > 50 ? location.speed : location.speed * 3.6)
-        : 0;
-
+      const safeName = escapeHtml(childName);
+      const speed = position ? kmPerHour(position) : null;
       const popupHtml = `
-        <div style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: right; direction: rtl; padding: 6px; min-width: 210px; box-sizing: border-box;">
-          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 8px;">
-            <strong style="font-size: 14px; color: #0f172a; line-height: 1.3;">🚸 ${childName}</strong>
-            <span style="font-size: 10px; padding: 3px 8px; border-radius: 8px; background: ${isViolated ? '#fee2e2' : '#d1fae5'}; color: ${isViolated ? '#991b1b' : '#065f46'}; font-weight: 800; white-space: nowrap;">
-              ${isViolated ? 'خارج المنطقة' : 'داخل المنطقة الآمنة'}
-            </span>
+        <div style="font-family:system-ui,sans-serif;text-align:right;direction:rtl;padding:6px;min-width:210px;box-sizing:border-box;color:#0f172a;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid #e2e8f0;padding-bottom:6px;margin-bottom:8px;">
+            <strong style="font-size:14px;line-height:1.3;">${safeName}</strong>
+            <span style="width:10px;height:10px;border-radius:50%;border:2px solid ${icon.tone};display:inline-block;"></span>
           </div>
-          <div style="font-size: 12px; color: #334155; line-height: 1.6;">
-            <div style="display: flex; justify-content: space-between; gap: 6px; margin-bottom: 3px;">
-              <span style="color: #64748b;">📍 الموقع:</span>
-              <strong style="font-family: monospace; direction: ltr;">${childLat.toFixed(5)}, ${childLng.toFixed(5)}</strong>
-            </div>
-            <div style="display: flex; justify-content: space-between; gap: 6px; margin-bottom: 3px;">
-              <span style="color: #64748b;">🎯 دقة GPS:</span>
-              <strong>±${Math.round(childAccuracy)} متر</strong>
-            </div>
-            <div style="display: flex; justify-content: space-between; gap: 6px; margin-bottom: 3px;">
-              <span style="color: #64748b;">⚡ السرعة:</span>
-              <strong>${speedKmH} كم/س</strong>
-            </div>
-            <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #cbd5e1; font-size: 11px; color: #0284c7; line-height: 1.4;">
-              💡 يمكنك سحب هذا الدبوس بالماوس أو الإصبع لنقل مكان الطفل.
-            </div>
+          <div style="font-size:12px;color:#334155;line-height:1.6;">
+            ${popupRow('آخر قراءة', label ? escapeHtml(label) : '—')}
+            ${popupRow('الإحداثيات', `${fix[0].toFixed(5)}, ${fix[1].toFixed(5)}`)}
+            ${speed === null ? '' : popupRow('السرعة', `${Math.round(speed)} كم/س`)}
           </div>
-        </div>
-      `;
+        </div>`;
 
-      if (childMarkerRef.current.getPopup()) {
-        childMarkerRef.current.setPopupContent(popupHtml);
-      } else {
-        childMarkerRef.current.bindPopup(popupHtml);
-      }
+      if (childMarkerRef.current.getPopup()) childMarkerRef.current.setPopupContent(popupHtml);
+      else childMarkerRef.current.bindPopup(popupHtml);
+    }
 
-      // 2. Accuracy Circle
+    // ── 2. Accuracy ring at its true metre scale, and only when one was reported ────────────────
+    const ring = fix && position
+      ? scaleForZoom(position.accuracy, map.getZoom(), fix[0])
+      : { ringMeters: null as number | null, pixelRadius: 0 };
+
+    if (fix && ring.ringMeters !== null) {
+      const circleOptions = {
+        radius: ring.ringMeters,
+        color: icon.tone,
+        fillColor: icon.tone,
+        fillOpacity: 0.1,
+        weight: 1.5,
+        dashArray: '4, 4',
+      };
       if (!accuracyCircleRef.current || !map.hasLayer(accuracyCircleRef.current)) {
-        accuracyCircleRef.current = L.circle([childLat, childLng], {
-          radius: childAccuracy,
-          color: pinBg,
-          fillColor: pinBg,
-          fillOpacity: 0.12,
-          weight: 1.5,
-          dashArray: '4, 4',
-        }).addTo(map);
+        accuracyCircleRef.current = L.circle(fix, circleOptions).addTo(map);
       } else {
-        accuracyCircleRef.current.setLatLng([childLat, childLng]);
-        accuracyCircleRef.current.setRadius(childAccuracy);
-        accuracyCircleRef.current.setStyle({ color: pinBg, fillColor: pinBg });
+        accuracyCircleRef.current.setLatLng(fix);
+        accuracyCircleRef.current.setRadius(ring.ringMeters);
+        accuracyCircleRef.current.setStyle({ color: icon.tone, fillColor: icon.tone });
       }
+    } else if (accuracyCircleRef.current && map.hasLayer(accuracyCircleRef.current)) {
+      map.removeLayer(accuracyCircleRef.current);
+      accuracyCircleRef.current = null;
+    }
 
-      // 3. Render Safe Zone Circles and Center Markers
-      zoneCirclesRef.current.forEach((c) => {
-        if (map.hasLayer(c)) map.removeLayer(c);
-      });
-      zoneCirclesRef.current = [];
+    // ── 3. Zones, drawn from the geometry the server stores ─────────────────────────────────────
+    for (const layer of zoneLayersRef.current) {
+      if (map.hasLayer(layer)) map.removeLayer(layer);
+    }
+    zoneLayersRef.current = [];
 
-      zoneCenterMarkersRef.current.forEach((m) => {
-        if (map.hasLayer(m)) map.removeLayer(m);
-      });
-      zoneCenterMarkersRef.current = [];
+    let nearest: { zone: MapZone; center: [number, number]; distance: number } | null = null;
+    for (const zone of zones || []) {
+      const center = zoneCenter(zone);
+      const geometry = zone.geometry;
 
-      let nearestZone: SafeZone | null = null;
-      let minDistance = Infinity;
-
-      (safeZones || []).forEach((zone) => {
-        if (!zone || !zone.active) return;
-        const zLat = safeLat(zone.latitude, 36.7538);
-        const zLng = safeLng(zone.longitude, 3.0588);
-        if (!isValidCoord(zLat, zLng)) return;
-
-        const zRadius = Math.max(10, safeNum(zone.radius, 100));
-
-        const dist = getDistanceMeters(childLat, childLng, zLat, zLng);
-
-        if (dist < minDistance) {
-          minDistance = dist;
-          nearestZone = zone;
-        }
-
-        // Safe Zone Circle
-        const circle = L.circle([zLat, zLng], {
-          radius: zRadius,
-          color: '#10b981',
-          fillColor: '#10b981',
-          fillOpacity: 0.15,
+      if (geometry.kind === 'circle' && center) {
+        const circle = L.circle(center, {
+          radius: geometry.radiusMeters,
+          color: ZONE_TONE,
+          fillColor: ZONE_TONE,
+          fillOpacity: 0.12,
           weight: 2,
         }).addTo(map);
+        const name = escapeHtml(zone.name);
+        circle.bindPopup(`
+          <div style="font-family:system-ui,sans-serif;text-align:right;direction:rtl;padding:2px;color:#0f172a;">
+            <strong style="color:#047857;">🏰 ${name}</strong><br/>
+            <span style="font-size:11px;color:#475569;">نصف القطر: ${Math.round(geometry.radiusMeters)} متر</span>
+          </div>`);
+        zoneLayersRef.current.push(circle);
 
-        // Center Pin Marker
-        const zoneCenterHtml = `
-          <div style="display: flex; flex-direction: column; align-items: center;">
-            <div style="background: #047857; color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 8px; border: 1px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); white-space: nowrap;">
-              🏰 ${zone.name}
-            </div>
-            <div style="width: 12px; height: 12px; background: #047857; border: 2px solid white; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.3); margin-top: -2px;"></div>
-          </div>
-        `;
-
-        const zoneIcon = L.divIcon({
-          className: 'zone-center-pin',
-          html: zoneCenterHtml,
-          iconSize: [30, 30],
-          iconAnchor: [15, 20],
-        });
-
-        const zoneMarker = L.marker([zLat, zLng], {
-          icon: zoneIcon,
-        }).addTo(map);
-
-        zoneMarker.bindPopup(`
-          <div style="font-family: system-ui, sans-serif; text-align: right; direction: rtl; padding: 2px;">
-            <strong style="color: #047857;">🏰 المنطقة الآمنة: ${zone.name}</strong><br/>
-            <span style="font-size: 11px; color: #475569;">نصف القطر: ${zRadius} متر</span><br/>
-            <span style="font-size: 10px; color: #059669; font-weight: 600;">
-              ${dist <= zRadius ? 'الطفل متواجد بالداخل' : `الطفل يبعد ${dist} متر عن المركز`}
-            </span>
-          </div>
-        `);
-
-        zoneCirclesRef.current.push(circle);
-        zoneCenterMarkersRef.current.push(zoneMarker);
-      });
-
-      // 4. Vector Distance Line between Child Pin & Nearest Safe Zone
-      if (nearestZone) {
-        const activeZone = nearestZone as SafeZone;
-        const nzLat = safeLat(activeZone.latitude, 36.7538);
-        const nzLng = safeLng(activeZone.longitude, 3.0588);
-        if (isValidCoord(nzLat, nzLng)) {
-          const lineCoords: [number, number][] = [
-            [childLat, childLng],
-            [nzLat, nzLng],
-          ];
-
-          const lineColor = isViolated ? '#ef4444' : '#10b981';
-
-          if (!distanceLineRef.current || !map.hasLayer(distanceLineRef.current)) {
-            distanceLineRef.current = L.polyline(lineCoords, {
-              color: lineColor,
-              weight: 2.5,
-              opacity: 0.85,
-              dashArray: '6, 6',
-            }).addTo(map);
-          } else {
-            distanceLineRef.current.setLatLngs(lineCoords);
-            distanceLineRef.current.setStyle({ color: lineColor });
-          }
+        if (fix) {
+          const distance = haversineMeters(fix[0], fix[1], center[0], center[1]);
+          if (!nearest || distance < nearest.distance) nearest = { zone, center, distance };
         }
-      } else if (distanceLineRef.current) {
-        if (map.hasLayer(distanceLineRef.current)) {
-          map.removeLayer(distanceLineRef.current);
-        }
-        distanceLineRef.current = null;
-      }
-
-      // 5. History Polyline
-      const validHistory = (locationHistory || []).filter((pt) =>
-        isValidCoord(pt?.latitude, pt?.longitude)
-      );
-      if (validHistory.length > 1) {
-        const latLngs = validHistory.map(
-          (pt) => [safeLat(pt.latitude), safeLng(pt.longitude)] as [number, number]
-        );
-        if (!historyPolylineRef.current || !map.hasLayer(historyPolylineRef.current)) {
-          historyPolylineRef.current = L.polyline(latLngs, {
-            color: '#3b82f6',
-            weight: 3,
-            opacity: 0.6,
-            dashArray: '4, 4',
+      } else if (geometry.kind === 'polygon') {
+        const ringPoints = geometry.points
+          .map((p) => childFixLatLng(p.lat, p.lon))
+          .filter((p): p is [number, number] => p !== null);
+        if (ringPoints.length >= 3) {
+          const polygon = L.polygon(ringPoints, {
+            color: ZONE_TONE,
+            fillColor: ZONE_TONE,
+            fillOpacity: 0.12,
+            weight: 2,
           }).addTo(map);
-        } else {
-          historyPolylineRef.current.setLatLngs(latLngs);
+          polygon.bindPopup(`<div style="direction:rtl;color:#047857;">🏰 ${escapeHtml(zone.name)}</div>`);
+          zoneLayersRef.current.push(polygon);
+        }
+      } else if (geometry.kind === 'linestring') {
+        const routePoints = geometry.points
+          .map((p) => childFixLatLng(p.lat, p.lon))
+          .filter((p): p is [number, number] => p !== null);
+        if (routePoints.length >= 2) {
+          const route = L.polyline(routePoints, { color: ZONE_TONE, weight: 3, opacity: 0.7 }).addTo(map);
+          route.bindPopup(`<div style="direction:rtl;color:#047857;">🛣️ ${escapeHtml(zone.name)}</div>`);
+          zoneLayersRef.current.push(route);
         }
       }
-
-      // Auto-Follow child only if explicitly enabled by parent
-      if (isAutoFollow) {
-        map.flyTo([childLat, childLng], map.getZoom(), {
-          animate: true,
-          duration: 1,
-        });
-      }
-    } catch (err) {
-      console.warn('Leaflet map update caught transient error:', err);
     }
-  }, [location, safeZones, kidState, childName, locationHistory, onChildLocationChange, isAutoFollow]);
+
+    // A plain distance to a zone centre is a measurement; whether the child is "inside" is the
+    // server's event to declare, so the map says the number and draws the line, and nothing more.
+    if (fix && nearest) {
+      const lineCoords: [number, number][] = [fix, nearest.center];
+      if (!distanceLineRef.current || !map.hasLayer(distanceLineRef.current)) {
+        distanceLineRef.current = L.polyline(lineCoords, {
+          color: ZONE_TONE, weight: 2, opacity: 0.7, dashArray: '6, 6',
+        }).addTo(map);
+      } else {
+        distanceLineRef.current.setLatLngs(lineCoords);
+      }
+    } else if (distanceLineRef.current) {
+      if (map.hasLayer(distanceLineRef.current)) map.removeLayer(distanceLineRef.current);
+      distanceLineRef.current = null;
+    }
+
+    // ── 4. History track, vertex by vertex as reported ──────────────────────────────────────────
+    const track = (history || [])
+      .map((p) => childFixLatLng(p.lat, p.lon))
+      .filter((p): p is [number, number] => p !== null);
+    if (track.length > 1) {
+      if (!historyPolylineRef.current || !map.hasLayer(historyPolylineRef.current)) {
+        historyPolylineRef.current = L.polyline(track, {
+          color: HISTORY_TONE, weight: 3, opacity: 0.6, dashArray: '4, 4',
+        }).addTo(map);
+      } else {
+        historyPolylineRef.current.setLatLngs(track);
+      }
+    } else if (historyPolylineRef.current && map.hasLayer(historyPolylineRef.current)) {
+      map.removeLayer(historyPolylineRef.current);
+      historyPolylineRef.current = null;
+    }
+
+    // Frame the data once when it first arrives, then leave the viewport to the guardian.
+    if (!hasFramedRef.current && (fix || (zones || []).length > 0)) {
+      if (frameAll(map, fix)) hasFramedRef.current = true;
+    }
+
+    if (isAutoFollow && fix) {
+      map.flyTo(fix, zoomForRing(position?.accuracy ?? null, fix[0]), { animate: true, duration: 1 });
+    }
+  }, [position, freshness, label, zones, history, sourceConflict, isAutoFollow, zoomLevel]);
 
   const handleRecenterOnChild = () => {
-    if (mapRef.current) {
-      const cLat = safeLat(location?.latitude, 36.7538);
-      const cLng = safeLng(location?.longitude, 3.0588);
-      mapRef.current.flyTo([cLat, cLng], 17, {
-        animate: true,
-        duration: 1,
-      });
-      if (childMarkerRef.current) {
-        childMarkerRef.current.openPopup();
-      }
+    const map = mapRef.current;
+    if (!map) return;
+    const fix = position ? childFixLatLng(position.latitude, position.longitude) : null;
+    if (!fix) {
+      setIsLegendOpen(false);
+      return;
     }
-  };
-
-  const handleZoomIn = () => {
-    if (mapRef.current) {
-      mapRef.current.zoomIn();
-    }
-  };
-
-  const handleZoomOut = () => {
-    if (mapRef.current) {
-      mapRef.current.zoomOut();
-    }
+    // Zoom so the reported radius fits the screen instead of pretending a fixed level is precise.
+    map.flyTo(fix, zoomForRing(position?.accuracy ?? null, fix[0]), { animate: true, duration: 1 });
+    childMarkerRef.current?.openPopup();
   };
 
   const handleFitAllBounds = () => {
-    if (!mapRef.current) return;
-    const cLat = safeLat(location?.latitude, 36.7538);
-    const cLng = safeLng(location?.longitude, 3.0588);
-    const points: [number, number][] = [[cLat, cLng]];
-
-    (safeZones || []).forEach((z) => {
-      if (z && z.active && isValidCoord(z.latitude, z.longitude)) {
-        points.push([safeLat(z.latitude), safeLng(z.longitude)]);
-      }
-    });
-
-    const validPoints = points.filter(([lat, lng]) => isValidCoord(lat, lng));
-    if (validPoints.length > 0) {
-      try {
-        const bounds = L.latLngBounds(validPoints);
-        if (bounds.isValid()) {
-          mapRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 17 });
-        }
-      } catch (err) {
-        console.warn('fitBounds error handled:', err);
-      }
-    }
+    const map = mapRef.current;
+    if (!map) return;
+    const fix = position ? childFixLatLng(position.latitude, position.longitude) : null;
+    if (frameAll(map, fix)) hasFramedRef.current = true;
   };
 
   return (
     <div className="relative w-full h-full min-h-0 rounded-2xl overflow-hidden shadow-inner border border-slate-200 dark:border-slate-800">
       <div ref={mapContainerRef} className="w-full h-full z-0" />
 
-      {/* Compact map controls: one consistent column on the right */}
+      {sourceConflict && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-amber-950/95 text-amber-100 border border-amber-500/60 rounded-2xl px-3 py-2 text-[11px] font-bold shadow-2xl">
+          ⚠️ مصدران للموقع يتعارضان: لا يُعرض أيٌّ منهما على الخريطة
+        </div>
+      )}
+
       <div className="absolute top-3 right-3 left-auto z-10 flex flex-col items-end gap-2 pointer-events-auto">
-        
-        {/* Recenter on Child Main Action Button */}
         <button
           onClick={handleRecenterOnChild}
           className="h-11 w-11 sm:h-12 sm:w-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl border border-emerald-400/60 shadow-2xl backdrop-blur-md flex items-center justify-center transition-all active:scale-95 group shrink-0"
-          title="إعادة التركيز المباشر والتكبير على مكان الطفل"
+          title="إعادة التركيز على آخر موقع بلّغ عنه الخادم"
         >
           <div className="p-1 rounded-xl bg-white/20 text-white group-hover:scale-110 transition-transform">
             <LocateFixed className="w-5 h-5" />
           </div>
         </button>
 
-        {/* Zoom In (+) Button */}
         <button
-          onClick={handleZoomIn}
-          className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-slate-900/95 hover:bg-slate-800 text-emerald-400 hover:text-white transition-all active:scale-90 flex items-center justify-center font-black text-xl border border-slate-700/80 shadow-2xl backdrop-blur-md shrink-0"
+          onClick={() => mapRef.current?.zoomIn()}
+          className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-slate-900/95 hover:bg-slate-800 text-emerald-400 hover:text-white transition-all active:scale-90 flex items-center justify-center border border-slate-700/80 shadow-2xl backdrop-blur-md shrink-0"
           title="تكبير الخريطة (+)"
         >
           <ZoomIn className="w-5 h-5 text-emerald-400" />
         </button>
 
-        {/* Zoom Out (-) Button */}
         <button
-          onClick={handleZoomOut}
-          className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-slate-900/95 hover:bg-slate-800 text-amber-400 hover:text-white transition-all active:scale-90 flex items-center justify-center font-black text-xl border border-slate-700/80 shadow-2xl backdrop-blur-md shrink-0"
+          onClick={() => mapRef.current?.zoomOut()}
+          className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-slate-900/95 hover:bg-slate-800 text-amber-400 hover:text-white transition-all active:scale-90 flex items-center justify-center border border-slate-700/80 shadow-2xl backdrop-blur-md shrink-0"
           title="تصغير الخريطة (-)"
         >
           <ZoomOut className="w-5 h-5 text-amber-400" />
         </button>
 
-        {/* Fit Bounds / Overview Button */}
         <button
           onClick={handleFitAllBounds}
           className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-slate-900/95 hover:bg-slate-800 text-blue-400 hover:text-white transition-all active:scale-90 flex items-center justify-center border border-slate-700/80 shadow-2xl backdrop-blur-md shrink-0"
@@ -484,7 +391,6 @@ export const MapView: React.FC<MapViewProps> = ({
           <Maximize2 className="w-5 h-5 text-blue-400" />
         </button>
 
-        {/* Auto-Follow Toggle Button */}
         <button
           onClick={() => setIsAutoFollow(!isAutoFollow)}
           className={`h-11 w-11 sm:h-12 sm:w-12 rounded-2xl border shadow-2xl backdrop-blur-md flex items-center justify-center text-xs font-extrabold transition-all active:scale-95 shrink-0 ${
@@ -492,16 +398,14 @@ export const MapView: React.FC<MapViewProps> = ({
               ? 'bg-emerald-950/95 border-emerald-500 text-emerald-300'
               : 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 border-slate-700/80'
           }`}
-          title={isAutoFollow ? 'إيقاف التتبع التلقائي' : 'تفعيل التتبع التلقائي للتحرك مع الطفل'}
+          title={isAutoFollow ? 'إيقاف التتبع التلقائي' : 'تفعيل التتبع التلقائي'}
         >
           <span className="text-base" aria-hidden="true">🔄</span>
         </button>
       </div>
 
-      {/* Collapsible Map Legend (Minimizable to save map area) */}
       <div className="absolute top-3 left-3 right-auto z-10 pointer-events-auto">
         {!isLegendOpen ? (
-          /* Small Compact Legend Trigger Pill */
           <button
             onClick={() => setIsLegendOpen(true)}
             className="bg-slate-900/95 hover:bg-slate-800 text-slate-200 px-3 py-2 rounded-2xl border border-slate-700/80 shadow-2xl backdrop-blur-md flex items-center gap-2 text-xs font-bold transition-all active:scale-95 group"
@@ -509,12 +413,10 @@ export const MapView: React.FC<MapViewProps> = ({
           >
             <span className="text-sm group-hover:rotate-12 transition-transform">🗺️</span>
             <span className="text-xs font-extrabold">مفاتيح الخريطة</span>
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
           </button>
         ) : (
-          /* Expanded Map Legend Card */
-          <div className="bg-slate-900/95 backdrop-blur-md text-white p-3 rounded-2xl border border-slate-700/90 shadow-2xl text-xs space-y-2.5 w-[210px] animate-in fade-in duration-200">
+          <div className="bg-slate-900/95 backdrop-blur-md text-white p-3 rounded-2xl border border-slate-700/90 shadow-2xl text-xs space-y-2.5 w-[220px]">
             <div className="flex items-center justify-between font-bold border-b border-slate-800 pb-1.5 text-emerald-400">
               <span className="flex items-center gap-1.5 font-extrabold">
                 <span>🗺️</span>
@@ -529,43 +431,39 @@ export const MapView: React.FC<MapViewProps> = ({
               </button>
             </div>
 
+            {/* §12: the states differ by SHAPE, so the legend says so in shapes, not colours. */}
             <div className="space-y-1.5 text-[11px] text-slate-200">
               <div className="flex items-center justify-between bg-slate-800/60 p-1.5 rounded-xl border border-slate-700/40">
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-emerald-500 border-2 border-white shrink-0 shadow-sm" />
-                  <span className="font-bold">موقع الطفل</span>
-                </div>
-                <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded font-mono">
-                  {kidState === 'SAFE' ? 'آمن 🟢' : 'تنبيه 🔴'}
-                </span>
+                <span className="font-bold">سهم ▲</span>
+                <span className="text-[10px] text-slate-400">الخادم أرسل اتجاهًا</span>
               </div>
-
               <div className="flex items-center justify-between bg-slate-800/60 p-1.5 rounded-xl border border-slate-700/40">
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-emerald-800 border-2 border-emerald-400 shrink-0 shadow-sm" />
-                  <span className="font-bold">المنطقة الآمنة</span>
-                </div>
-                <span className="text-[10px] text-slate-400">نطاق حماية</span>
+                <span className="font-bold">نقطة ●</span>
+                <span className="text-[10px] text-slate-400">موقع بلا اتجاه</span>
               </div>
-
               <div className="flex items-center justify-between bg-slate-800/60 p-1.5 rounded-xl border border-slate-700/40">
-                <div className="flex items-center gap-2">
-                  <span className="w-4 h-0.5 bg-blue-400 rounded shrink-0 border border-blue-300" />
-                  <span className="font-bold">المسار السابق</span>
-                </div>
-                <span className="text-[10px] text-blue-300">خط حركة</span>
+                <span className="font-bold">علامة ؟ بحواف متقطّعة</span>
+                <span className="text-[10px] text-slate-400">لا بيانات من الخادم</span>
+              </div>
+              <div className="flex items-center justify-between bg-slate-800/60 p-1.5 rounded-xl border border-slate-700/40">
+                <span className="font-bold">دائرة متقطّعة حول الطفل</span>
+                <span className="text-[10px] text-slate-400">دقّة آخر قراءة بمقياسها الحقيقي</span>
+              </div>
+              <div className="flex items-center justify-between bg-slate-800/60 p-1.5 rounded-xl border border-slate-700/40">
+                <span className="font-bold">🏰 منطقة</span>
+                <span className="text-[10px] text-slate-400">الشكل كما يخزّنه الخادم</span>
+              </div>
+              <div className="flex items-center justify-between bg-slate-800/60 p-1.5 rounded-xl border border-slate-700/40">
+                <span className="font-bold">خط الحركة</span>
+                <span className="text-[10px] text-slate-400">قراءات سابقة مُبلَّغ بها</span>
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Floating Coordinates Status Bar */}
       <div className="absolute bottom-3 right-3 rtl:right-auto rtl:left-3 z-10 bg-slate-900/90 backdrop-blur-md text-white px-3 py-1.5 rounded-xl border border-slate-700/50 shadow-lg text-[11px]">
-        <div className="flex items-center gap-1.5 font-mono">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-          <span>GPS: {safeLat(location?.latitude).toFixed(4)}, {safeLng(location?.longitude).toFixed(4)}</span>
-        </div>
+        <span className="font-mono">{label ?? '—'}</span>
       </div>
     </div>
   );

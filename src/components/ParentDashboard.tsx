@@ -31,7 +31,10 @@ import {
   CheckInRequest,
 } from '../types';
 import { Language, translations } from '../translations';
-import { MapView } from './MapView';
+import { type Freshness } from '../services/traccar/positions.ts';
+import type { ServerPosition } from '../services/traccar/types.ts';
+import type { LatLng } from '../services/traccar/wkt.ts';
+import { MapView, type MapZone } from './MapView';
 import { SafeZoneForm } from './SafeZoneForm';
 import { AlertPolicySettings } from './AlertPolicySettings';
 import { HealthDiagnosticsModal } from './HealthDiagnosticsModal';
@@ -46,7 +49,6 @@ interface ParentDashboardProps {
   healthStatus: HealthStatus;
   alertPolicy: AlertPolicyConfig;
   pairingInfo: DevicePairing;
-  locationHistory: LocationPoint[];
   lang: Language;
   onSaveSafeZone: (zone: Omit<SafeZone, 'id' | 'createdAt'>) => void;
   onDeleteSafeZone: (zoneId: string) => void;
@@ -60,7 +62,13 @@ interface ParentDashboardProps {
   onGenerateNewPairingCode: () => void;
   onPairWithCode: (code: string) => boolean;
   onRevokeDevice?: () => void;
-  onChildLocationChange?: (lat: number, lng: number) => void;
+  // The map shows the child's position only as App.tsx received it from the server (spec §12).
+  childPosition: ServerPosition | null;
+  childFreshness: Freshness | null;
+  childLabel: string | null;
+  mapZones: MapZone[];
+  mapHistory: LatLng[];
+  sourceConflict: boolean;
   onOpenSettings?: () => void;
   activeTab?: 'map' | 'zones' | 'alerts' | 'health' | 'settings' | 'pairing';
   onTabChange?: (tab: 'map' | 'zones' | 'alerts' | 'health' | 'settings' | 'pairing') => void;
@@ -79,7 +87,6 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
   healthStatus,
   alertPolicy,
   pairingInfo,
-  locationHistory,
   lang,
   onSaveSafeZone,
   onDeleteSafeZone,
@@ -93,7 +100,12 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
   onGenerateNewPairingCode,
   onPairWithCode,
   onRevokeDevice,
-  onChildLocationChange,
+  childPosition,
+  childFreshness,
+  childLabel,
+  mapZones,
+  mapHistory,
+  sourceConflict,
   onOpenSettings,
   activeTab: externalActiveTab,
   onTabChange,
@@ -399,16 +411,17 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
       {activeTab === 'map' && (
         <div className="h-[clamp(390px,58svh,520px)] sm:h-[520px] rounded-3xl overflow-hidden shadow-2xl">
           <MapView
-            location={location}
-            safeZones={safeZones}
-            kidState={riskAssessment.state}
             childName={alertPolicy.childName}
-            locationHistory={locationHistory}
+            position={childPosition}
+            freshness={childFreshness}
+            label={childLabel}
+            zones={mapZones}
+            history={mapHistory}
+            sourceConflict={sourceConflict}
             onSelectCoordinates={(lat, lng) => {
               setSelectedMapCoords({ lat, lng });
               setShowAddZoneModal(true);
             }}
-            onChildLocationChange={onChildLocationChange}
           />
         </div>
       )}

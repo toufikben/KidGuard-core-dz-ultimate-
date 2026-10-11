@@ -36,6 +36,13 @@ export const catalog: Record<string, CatalogEntry> = {
   'login.serverUnknown': { ar: 'الخادم غير معروف', fr: 'serveur inconnu', en: 'unknown server' },
 };
 
+// A locale is a control value, not data: whatever a screen read out of storage must be narrowed
+// before it reaches `translate`, which throws on an unknown language (R-M1-14). App.tsx owns the
+// stored value, so App.tsx owns this check.
+export function isCatalogLang(value: unknown): value is CatalogLang {
+  return value === 'ar' || value === 'fr' || value === 'en';
+}
+
 // Translate one catalog key into one language, substituting {placeholder} tokens. Digits are handed
 // in as plain ASCII strings on purpose: Intl.NumberFormat('ar') would emit Arabic-Indic numerals and
 // break the deterministic, testable contract the label regexes assert. Throws rather than returning

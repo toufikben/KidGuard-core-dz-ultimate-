@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { kmPerHour, ageSeconds, freshnessOf, formatPositionLabel, resolveSourceReadings, isSourceConflict } from '../../src/services/traccar/positions.ts';
+import { readFileSync } from 'node:fs';
+import { kmPerHour, ageSeconds, freshnessOf, formatPositionLabel, noDataLabel, resolveSourceReadings, isSourceConflict } from '../../src/services/traccar/positions.ts';
+import { isCatalogLang } from '../../src/translations/catalog.ts';
 import type { ServerPosition } from '../../src/services/traccar/types.ts';
 
 const now = Date.parse('2026-10-08T12:00:00Z');
@@ -165,4 +167,25 @@ test('no catalog key exists in one language only and none carries an extra langu
   for (const key of ['position.ageSeconds', 'position.accuracyMeters', 'position.noDataFromServer', 'position.locationMayNotBeCurrent']) {
     assert.ok(key in catalog, `required label key is missing: ${key}`);
   }
+});
+
+// R-M1-14 draws the line: a broken READING degrades into a true sentence, a broken `lang` does not,
+// because language is not data — the caller that reads it out of localStorage owns the check. These
+// three tests are what keeps that decision honest once the screen-facing code grows.
+test('isCatalogLang accepts exactly the three catalog languages and nothing else', () => {
+  for (const ok of ['ar', 'fr', 'en']) assert.equal(isCatalogLang(ok), true, `${ok} is a catalog language`);
+  for (const bad of ['de', 'ar-DZ', 'AR', ' ar', '', 'null', null, undefined, 0, 42, {}, [], ['ar']]) {
+    assert.equal(isCatalogLang(bad as unknown), false, `${JSON.stringify(bad)} is not a catalog language`);
+  }
+});
+
+test('an unchecked locale reaches translate as a throw, so the reader-side check is load-bearing', () => {
+  assert.throws(() => noDataLabel('de' as never), /is blank/);
+});
+
+test('App.tsx checks the stored locale instead of casting it (the R-M1-14 caller duty)', () => {
+  const src = readFileSync(new URL('../../src/App.tsx', import.meta.url), 'utf8');
+  assert.match(src, /const stored = localStorage\.getItem\(LANG_KEY\)/, 'the stored locale must be read into a value that gets checked');
+  assert.match(src, /isCatalogLang\(stored\)[\s\S]{0,40}'ar'/, 'an unknown stored locale must fall back to Arabic, the product language');
+  assert.doesNotMatch(src, /localStorage\.getItem\(LANG_KEY\)[^\n]* as (Language|CatalogLang|any)/, 'a cast is not a check');
 });

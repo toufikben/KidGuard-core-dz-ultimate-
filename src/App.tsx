@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { App as CapApp } from '@capacitor/app';
@@ -17,6 +17,11 @@ import {
   CheckInRequest,
 } from './types';
 import { Language } from './translations';
+import { isCatalogLang } from './translations/catalog.ts';
+import { noDataLabel, type Freshness } from './services/traccar/positions.ts';
+import type { ServerPosition } from './services/traccar/types.ts';
+import { childFixLatLng } from './components/map/childIcon';
+import type { MapZone } from './components/MapView';
 import { Navbar } from './components/Navbar';
 import { ParentDashboard } from './components/ParentDashboard';
 import { ChildView } from './components/ChildView';
@@ -80,7 +85,10 @@ export default function App() {
 
   const [lang, setLang] = useState<Language>(() => {
     try {
-      return (localStorage.getItem(LANG_KEY) as Language) || 'ar';
+      // The stored value is whatever a previous run wrote, so it is checked, not cast: an unknown
+      // locale would reach translate() on the position label and take the screen down (R-M1-14).
+      const stored = localStorage.getItem(LANG_KEY);
+      return isCatalogLang(stored) ? stored : 'ar';
     } catch {
       return 'ar';
     }
@@ -451,20 +459,11 @@ export default function App() {
     return () => window.clearInterval(healthTimer);
   }, [location, alertPolicy.batteryAlertThreshold, alertPolicy.batterySmsEnabled, alertPolicy.smsMode]);
 
-  const handleChildLocationChange = useCallback(
-    (lat: number, lng: number) => {
-      const updatedLoc: LocationPoint = {
-        ...location,
-        latitude: lat,
-        longitude: lng,
-        timestamp: Date.now(),
-      };
-      setLocation(updatedLoc);
-      setLocationHistory((hist) => [...hist.slice(-30), updatedLoc]);
-      runEvaluation(updatedLoc, safeZones);
-    },
-    [location, safeZones, runEvaluation]
-  );
+  // The map's child feed. Task 9 replaces these four values with `useChildren()` output and nothing
+  // else changes: until a server source reports the child there is no reading, no freshness and no
+  // track, and the map says «لا بيانات من الخادم» instead of drawing the fabricated pin the audited
+  // v1.3 build put at 36.7538/3.0588. The legacy `location` state is the ADULT's own geolocation —
+  // feeding it to the child's map is the exact confusion that audit measured.
 
   const handleSaveSafeZone = (zoneData: Omit<SafeZone, 'id' | 'createdAt'>) => {
     const newZone: SafeZone = {
@@ -611,6 +610,29 @@ export default function App() {
     setIsSettingsModalOpen(true);
   };
 
+  // The zones the map may draw. Legacy storage keeps centre+radius, which is already a circle
+  // geometry; anything the store holds that is not a real coordinate is dropped, never defaulted.
+  const mapZones = useMemo<MapZone[]>(() => (safeZones || [])
+    .filter((zone) => zone.active)
+    .map((zone) => {
+      const center = childFixLatLng(zone.latitude, zone.longitude);
+      if (!center || !Number.isFinite(zone.radius) || zone.radius <= 0) return null;
+      return {
+        id: zone.id,
+        name: zone.name,
+        geometry: { kind: 'circle' as const, lat: center[0], lon: center[1], radiusMeters: zone.radius },
+      };
+    })
+    .filter((zone): zone is MapZone => zone !== null), [safeZones]);
+
+  // Task 9 supplies these from the server. A child track is server data too, so none is shown yet.
+  const childPosition: ServerPosition | null = null;
+  const childFreshness: Freshness | null = null;
+  const childHistory: { lat: number; lon: number }[] = [];
+  // With no reading the map may only say what the words for "no data" are; Task 9 replaces this
+  // with formatPositionLabel of the chosen reading.
+  const childLabel: string | null = noDataLabel(lang);
+
   return (
     <div
       dir={lang === 'ar' ? 'rtl' : 'ltr'}
@@ -720,7 +742,6 @@ export default function App() {
             healthStatus={healthStatus}
             alertPolicy={alertPolicy}
             pairingInfo={pairingInfo}
-            locationHistory={locationHistory}
             lang={lang}
             onSaveSafeZone={handleSaveSafeZone}
             onDeleteSafeZone={handleDeleteSafeZone}
@@ -734,7 +755,12 @@ export default function App() {
             onGenerateNewPairingCode={handleGenerateNewPairingCode}
             onPairWithCode={handlePairWithCode}
             onRevokeDevice={handleRevokeDevice}
-            onChildLocationChange={handleChildLocationChange}
+            childPosition={childPosition}
+            childFreshness={childFreshness}
+            childLabel={childLabel}
+            mapZones={mapZones}
+            mapHistory={childHistory}
+            sourceConflict={false}
             onOpenSettings={handleOpenSettings}
             activeTab={parentActiveTab}
             onTabChange={setParentActiveTab}

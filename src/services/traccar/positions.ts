@@ -62,7 +62,9 @@ export function freshnessOf(age: number): Freshness {
 }
 
 // §12's honest sentence for a source we cannot read: no data, and the location may not be current.
-function noDataLabel(lang: CatalogLang): string {
+// Exported because a screen with NO reading at all needs the same words as a reading that went
+// silent; formatPositionLabel uses it below, and App.tsx uses it to label an absent feed.
+export function noDataLabel(lang: CatalogLang): string {
   return `${translate('position.noDataFromServer', lang)} — ${translate('position.locationMayNotBeCurrent', lang)}`;
 }
 
