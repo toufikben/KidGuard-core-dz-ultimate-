@@ -34,6 +34,89 @@ export const catalog: Record<string, CatalogEntry> = {
   // the truth in words, which is that we do not know what server is out there.
   'login.serverVersion': { ar: 'إصدار الخادم {version}', fr: 'serveur {version}', en: 'server {version}' },
   'login.serverUnknown': { ar: 'الخادم غير معروف', fr: 'serveur inconnu', en: 'unknown server' },
+
+  // Task 7 — the map. §12 and the plan's catalog rule ("كل مهمة تضيف مفاتيحها هنا لا داخل المكوّن")
+  // mean MapView.tsx now holds no literal copy at all; the guard in tests/app/childIcon.test.ts fails
+  // the suite if a single Arabic word reappears there. Nothing below may claim safety: these name
+  // shapes, ages and accuracy — the verdict belongs to the server.
+  'map.lastReading': { ar: 'آخر قراءة', fr: 'Dernière lecture', en: 'Last reading' },
+  'map.coordinates': { ar: 'الإحداثيات', fr: 'Coordonnées', en: 'Coordinates' },
+  'map.speed': { ar: 'السرعة', fr: 'Vitesse', en: 'Speed' },
+  'map.speedUnit': { ar: 'كم/س', fr: 'km/h', en: 'km/h' },
+  'map.radiusMeters': { ar: 'نصف القطر: {radius} متر', fr: 'rayon : {radius} m', en: 'radius: {radius} m' },
+  // §3: the sentence is only ever shown when both sources exist and disagree by over 300 m, and what
+  // it promises is that NEITHER is drawn — the marker path enforces the same thing.
+  'map.sourceConflict': {
+    ar: '⚠️ مصدران للموقع يتعارضان: لا يُعرض أيٌّ منهما على الخريطة',
+    fr: "⚠️ Deux sources de position se contredisent : aucune n'est affichée sur la carte",
+    en: '⚠️ Two position sources conflict: neither is shown on the map',
+  },
+  'map.recenterTitle': {
+    ar: 'إعادة التركيز على آخر موقع بلّغ عنه الخادم',
+    fr: 'Recentrer sur la dernière position signalée par le serveur',
+    en: 'Recentre on the last position the server reported',
+  },
+  'map.zoomInTitle': { ar: 'تكبير الخريطة (+)', fr: 'Zoomer la carte (+)', en: 'Zoom in (+)' },
+  'map.zoomOutTitle': { ar: 'تصغير الخريطة (-)', fr: 'Dézoomer la carte (-)', en: 'Zoom out (-)' },
+  'map.fitAllTitle': {
+    ar: 'عرض جميع المناطق والطفل معاً على الخريطة',
+    fr: 'Afficher toutes les zones et l’enfant sur la carte',
+    en: 'Show all zones and the child together on the map',
+  },
+  'map.followOnTitle': { ar: 'تفعيل التتبع التلقائي', fr: 'Activer le suivi automatique', en: 'Enable auto-follow' },
+  'map.followOffTitle': { ar: 'إيقاف التتبع التلقائي', fr: 'Désactiver le suivi automatique', en: 'Disable auto-follow' },
+  'map.legendOpenTitle': {
+    ar: 'عرض مفاتيح الخريطة والرموز',
+    fr: 'Afficher la légende et les symboles de la carte',
+    en: 'Show the map legend and symbols',
+  },
+  'map.legendTitle': { ar: 'مفاتيح الخريطة', fr: 'Légende de la carte', en: 'Map legend' },
+  'map.legendCloseTitle': { ar: 'إخفاء مفتاح الخريطة', fr: 'Masquer la légende', en: 'Hide the legend' },
+  // The legend explains SHAPES, because §12 forbids a state that only a colour carries. Each row is
+  // the shape and the fact it stands for; a guardian who cannot see the tone still reads all five.
+  'map.legendArrowShape': { ar: 'سهم ▲', fr: 'Flèche ▲', en: 'Arrow ▲' },
+  'map.legendArrowNote': { ar: 'الخادم أرسل اتجاهًا', fr: 'Le serveur a envoyé une direction', en: 'The server sent a heading' },
+  'map.legendDotShape': { ar: 'نقطة ●', fr: 'Point ●', en: 'Dot ●' },
+  'map.legendDotNote': { ar: 'موقع بلا اتجاه', fr: 'Position sans direction', en: 'A position with no heading' },
+  'map.legendAgingShape': {
+    ar: 'إطار خارجي منقّط حول الرمز',
+    fr: 'Contour pointillé autour du symbole',
+    en: 'Dotted outline around the symbol',
+  },
+  'map.legendAgingNote': {
+    ar: 'قراءة متقادمة (أكثر من 3 دقائق)',
+    fr: 'Lecture ancienne (plus de 3 minutes)',
+    en: 'An aging reading (over 3 minutes)',
+  },
+  'map.legendSilentShape': {
+    ar: 'علامة ؟ بحواف متقطّعة',
+    fr: 'Marque ? aux bords tiretés',
+    en: '? mark with a dashed edge',
+  },
+  // `position.noDataFromServer` is this row note already; the legend reuses it rather than keeping a
+  // second copy of the sentence that the label printer emits.
+  'map.legendRingShape': {
+    ar: 'دائرة متقطّعة حول الطفل',
+    fr: 'Cercle tireté autour de l’enfant',
+    en: 'Dashed circle around the child',
+  },
+  'map.legendRingNote': {
+    ar: 'دقّة آخر قراءة بمقياسها الحقيقي',
+    fr: 'Précision de la dernière lecture, à son échelle réelle',
+    en: 'The last reading’s accuracy at its true scale',
+  },
+  'map.legendZoneShape': { ar: '🏰 منطقة', fr: '🏰 Zone', en: '🏰 Zone' },
+  'map.legendZoneNote': {
+    ar: 'الشكل كما يخزّنه الخادم',
+    fr: 'La forme telle que le serveur la stocke',
+    en: 'The shape as the server stores it',
+  },
+  'map.legendTrackShape': { ar: 'خط الحركة', fr: 'Tracé du parcours', en: 'Track line' },
+  'map.legendTrackNote': {
+    ar: 'قراءات سابقة مُبلَّغ بها',
+    fr: 'Lectures précédentes signalées',
+    en: 'Previously reported readings',
+  },
 };
 
 // A locale is a control value, not data: whatever a screen read out of storage must be narrowed

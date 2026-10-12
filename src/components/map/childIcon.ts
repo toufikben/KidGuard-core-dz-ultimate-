@@ -69,13 +69,18 @@ export function childIconHtml({ course, freshness, hasFix }: ChildIconInput): Ch
 
   // Dashed for the unreadable state: a second, non-colour channel for the same fact.
   const border = `border:3px ${quiet ? 'dashed' : 'solid'} ${tone};`;
+  // §12 asks for a shape that is not colour for EVERY freshness state, and the review of Task 7
+  // measured that fresh and aging were byte-identical once the hex codes were stripped — green
+  // against amber is precisely the pair colour-blindness blurs. Aging therefore gets an outer dotted
+  // ring (dashed is already spent on "unreadable"), so the three ages are three shapes.
+  const agingRing = !quiet && freshness === 'aging' ? `outline:2px dotted ${tone};outline-offset:2px;` : '';
   const rotation = shape === 'arrow' ? `transform:rotate(${heading}deg);` : '';
 
   return {
     shape,
     tone,
     html: `<div style="width:${CHILD_ICON_SIZE}px;height:${CHILD_ICON_SIZE}px;box-sizing:border-box;`
-      + `${border}border-radius:50%;background:${CHILD_ICON_COLORS.plate};`
+      + `${border}${agingRing}border-radius:50%;background:${CHILD_ICON_COLORS.plate};`
       + 'display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(15,23,42,0.45);">'
       + `<span style="${rotation}color:${CHILD_ICON_COLORS.ink};font-size:16px;line-height:1;">${glyph}</span></div>`,
   };
@@ -101,8 +106,9 @@ export function scaleForZoom(
     throw new Error(`latitude is not a latitude: ${latitude}`);
   }
   // An accuracy the server did not report is not a small accuracy. Draw nothing rather than the
-  // invented 10 m radius the old map used.
-  if (typeof accuracyMeters !== 'number' || !Number.isFinite(accuracyMeters) || accuracyMeters < 0) {
+  // invented 10 m radius the old map used. Zero is refused for the same reason zoomForRing refuses
+  // it: no receiver reports a zero-metre error, so a "0" means the field was never measured.
+  if (typeof accuracyMeters !== 'number' || !Number.isFinite(accuracyMeters) || accuracyMeters <= 0) {
     return { ringMeters: null, pixelRadius: 0 };
   }
   const metersPerPixel = (EARTH_CIRCUMFERENCE_METERS * Math.cos((latitude * Math.PI) / 180))

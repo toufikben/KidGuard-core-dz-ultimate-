@@ -12,7 +12,18 @@ const pos = (over: Partial<ServerPosition>): ServerPosition => ({
 });
 
 test('speed comes from the server in knots and is shown in km/h', () => {
-  assert.equal(Math.round(kmPerHour(pos({ speed: 10 }))), 19, '10 kn = 18.52 km/h');
+  // `?? NaN` is load-bearing: if the conversion ever refuses a real speed, the round is NaN ≠ 19.
+  assert.equal(Math.round(kmPerHour(pos({ speed: 10 })) ?? Number.NaN), 19, '10 kn = 18.52 km/h');
+  assert.equal(kmPerHour(pos({ speed: 0 })), 0, 'a stopped child is a measured speed, not an unknown');
+});
+
+// R-M1-14, found by the independent Task 7 review: `position.speed` is server data, and the map used
+// to print `Math.round(speed)` unguarded — so a missing or NaN speed rendered as «NaN كم/س» on a
+// safety screen. The conversion refuses to invent the number rather than trusting every caller.
+test('an unreadable server speed is null, never a number the screen can print', () => {
+  for (const speed of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, undefined, null, '10', {}]) {
+    assert.equal(kmPerHour({ speed: speed as never }), null, `${String(speed)} is not a speed`);
+  }
 });
 
 test('age is read off fixTime, not serverTime (ruling R30)', () => {

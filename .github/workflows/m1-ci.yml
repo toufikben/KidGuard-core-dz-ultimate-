@@ -20,7 +20,7 @@ jobs:
       # فالبوابة أرضية عدد لا شفرة خروج. تُرفع الأرقام في نفس الالتزام الذي يزيد الاختبارات.
       - name: Run app tests with a measured count floor
         env:
-          EXPECTED_MIN_TESTS: '99'
+          EXPECTED_MIN_TESTS: '105'
         run: |
           set -o pipefail
           npm run test:app --silent | tee /tmp/app.log

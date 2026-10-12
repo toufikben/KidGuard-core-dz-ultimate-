@@ -28,11 +28,13 @@ const MAX_FUTURE_SKEW_MS = 5_000;
 const CONFLICT_DISTANCE_M = 300;
 
 // The only knots→km/h conversion in the app (1 knot = 1.852 km/h exactly); every Traccar speed the
-// UI shows must route through here. Named debt, not a claim of uniqueness: two legacy m/s→km/h
-// conversions remain outside this layer — src/services/RiskEngine.ts `toKmH` (HTML5 geolocation,
-// genuinely m/s) and src/components/MapView.tsx's `speed > 50 ? speed : speed * 3.6` guess, which
-// cannot tell the two units apart. The task that owns the map replaces that guess with this function.
-export function kmPerHour(position: Pick<ServerPosition, 'speed'>): number {
+// UI shows must route through here. Named debt, not a claim of uniqueness: one legacy m/s→km/h
+// conversion remains outside this layer — src/services/RiskEngine.ts `toKmH` (HTML5 geolocation,
+// genuinely m/s). MapView's old `speed > 50 ? speed : speed * 3.6` guess was deleted by Task 7.
+// A speed the server did not report is `null`, not 0: `undefined * 1.852` is NaN, and the screen
+// would print «NaN كم/س» — R-M1-14 forbids a printed number that was never measured.
+export function kmPerHour(position: Pick<ServerPosition, 'speed'>): number | null {
+  if (!Number.isFinite(position.speed)) return null;
   return position.speed * 1.852;
 }
 

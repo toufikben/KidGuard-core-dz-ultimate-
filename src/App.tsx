@@ -107,7 +107,6 @@ export default function App() {
     isMockLocation: false,
   });
 
-  const [locationHistory, setLocationHistory] = useState<LocationPoint[]>([]);
   const [safeZones, setSafeZones] = useState<SafeZone[]>(() => loadSafeZones());
   const [alertHistory, setAlertHistory] = useState<LoggedAlert[]>(() =>
     AlertPolicyManager.getInstance().getAlertHistory()
@@ -341,7 +340,6 @@ export default function App() {
         protectionState.recordLocation(realLoc, Capacitor.isNativePlatform() ? 'BACKGROUND_GPS' : 'LIVE_GPS');
         setLastKnownLocation(protectionState.getLastKnownLocation());
         setLocation(realLoc);
-        setLocationHistory((hist) => [...hist.slice(-30), realLoc]);
         runEvaluation(realLoc, safeZones);
       }
     };

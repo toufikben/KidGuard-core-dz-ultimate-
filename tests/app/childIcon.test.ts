@@ -221,7 +221,9 @@ const mapSource = () => readFileSync(new URL('../../src/components/MapView.tsx',
 test('MapView carries no fabricated coordinate and no invented accuracy default', () => {
   const src = mapSource();
   assert.doesNotMatch(src, /36\.7538|3\.0588/, 'the map must not hold an Algiers fallback');
-  assert.doesNotMatch(src, /safeLat\(|safeLng\(|safeNum\(/, 'the fabricating helpers must be gone');
+  // The bare identifiers, not just their call sites: a mutation run proved that banning only
+  // `safeNum(` lets the helper come back as a definition, waiting for someone to call it.
+  assert.doesNotMatch(src, /\bsafeNum\b|\bsafeLat\b|\bsafeLng\b/, 'the fabricating helpers must be gone');
   assert.ok(src.includes('childFixLatLng'), 'the map must gate its marker on a real fix');
 });
 
@@ -242,4 +244,58 @@ test('MapView has no data source of its own and no client-side safety verdict', 
   assert.doesNotMatch(src, /داخل المنطقة|خارج المنطقة|متواجد بالداخل|آمن 🟢|'آمن'|تنبيه 🔴/,
     'a safety verdict belongs to the server, not the pin');
   assert.ok(src.includes('childIconHtml'), 'the icon must come from the tested module');
+});
+
+// ── fix round 1 (independent review of Task 7) ─────────────────────────────────────────────────
+// The brief's (هـ) compared fresh against silent, but §12 says the STATES (plural) must survive
+// colour-blindness. Fresh and aging were byte-identical once the hex codes were stripped: the only
+// difference was green vs amber, the classic confusing pair. Aging now carries an extra shape —
+// an outer dotted ring — that neither the fresh nor the silent pin emits.
+test('fresh and aging differ even after every hex code is removed', () => {
+  const fresh = withoutColor(childIconHtml(input({ course: 90, freshness: 'fresh' })).html);
+  const aging = withoutColor(childIconHtml(input({ course: 90, freshness: 'aging' })).html);
+  assert.notEqual(fresh, aging, 'an aging pin must be recognisable without colour');
+  assert.match(aging, /outline:2px dotted/, 'the aging shape is an outer dotted ring');
+  assert.doesNotMatch(fresh, /outline:/);
+  // The two non-colour channels must not collide: dashed belongs to "no readable data", dotted to
+  // "old data", and a guardian who cannot see the tone still has three distinct shapes.
+  assert.doesNotMatch(aging, /dashed/, 'the aging ring must not reuse the silent border style');
+});
+
+test('only a real aging reading gets the ring: silent, null, and no-fix pins never emit it', () => {
+  for (const over of [
+    { freshness: 'fresh' },
+    { freshness: 'silent' },
+    { freshness: null },
+    { freshness: 'aging', hasFix: false },
+  ] as Partial<IconInput>[]) {
+    const html = childIconHtml(input(over)).html;
+    assert.doesNotMatch(html, /outline:/, `${JSON.stringify(over)} must not carry the aging ring: ${html}`);
+  }
+});
+
+// A radius of exactly zero metres is not a measurement the server took; it is the same "nothing to
+// draw" case zoomForRing already refuses. The two call sites must not disagree about that.
+test('an accuracy of zero is refused by both ring call sites, not drawn as a zero-metre ring', () => {
+  assert.deepEqual(scaleForZoom(0, 16, 36.75), { ringMeters: null, pixelRadius: 0 });
+  assert.equal(zoomForRing(0, 36.75), DEFAULT_VIEW_ZOOM);
+});
+
+// §12 and the plan's catalog rule: "كل مهمة لاحقة تضيف مفاتيحها هنا لا داخل المكوّن". The map was
+// rewritten by this task, so the file may now hold no literal copy at all — including the fr/en
+// screens, which MapView could not render without `lang`.
+test('MapView carries no literal copy: every string is a catalog key and the language is a prop', () => {
+  const src = mapSource();
+  assert.doesNotMatch(src, /[؀-ۿ]/, 'the map must read its copy from src/translations/catalog.ts');
+  assert.match(src, /lang: CatalogLang/, 'the map cannot choose a language for itself');
+  assert.match(src, /import \{[^}]*translate[^}]*\} from '\.\.\/translations\/catalog\.ts'/);
+});
+
+// The conflict banner claims «لا يُعرض أيٌّ منهما على الخريطة». A banner that lies about the pin is a
+// safety claim, so the marker path itself refuses the position while the sources disagree — the
+// component keeps its own promise instead of relying on Task 9 to pass null.
+test('MapView draws no child pin while the two sources conflict', () => {
+  const src = mapSource();
+  assert.match(src, /!\s*sourceConflict\s*&&\s*position\s*\?\s*childFixLatLng/,
+    'the fix must be gated on sourceConflict, not only on position');
 });

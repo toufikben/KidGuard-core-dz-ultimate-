@@ -411,6 +411,7 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
       {activeTab === 'map' && (
         <div className="h-[clamp(390px,58svh,520px)] sm:h-[520px] rounded-3xl overflow-hidden shadow-2xl">
           <MapView
+            lang={lang}
             childName={alertPolicy.childName}
             position={childPosition}
             freshness={childFreshness}

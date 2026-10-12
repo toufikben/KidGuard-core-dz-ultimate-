@@ -3,13 +3,16 @@
 // This component has no source of truth of its own: every fact on it arrives as a prop, and Task 9
 // replaces those props in App.tsx without touching this file. That rule exists because of a
 // measurement, not a preference — the shipped v1.3 build drew a child pin at a fabricated Algiers
-// centre with an «آمن» badge for a position no source ever reported (audited on a guardian's phone,
-// 2026-10-11). A pin therefore requires a real fix, and the drawing code holds no fallback numbers.
+// centre with an "all safe" badge for a position no source ever reported (audited on a guardian's
+// phone, 2026-10-11). A pin therefore requires a real fix, and the drawing code holds no fallback
+// numbers. All copy comes from src/translations/catalog.ts: the file carries no literal string, so
+// the fr/en screens are as translatable as the Arabic one (§12: no scattered copy inside a component).
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { LocateFixed, Maximize2, ZoomIn, ZoomOut, ChevronDown, X } from 'lucide-react';
 import { haversineMeters, kmPerHour, type Freshness } from '../services/traccar/positions.ts';
+import { translate, type CatalogLang } from '../translations/catalog.ts';
 import type { ServerPosition } from '../services/traccar/types.ts';
 import type { Geometry, LatLng } from '../services/traccar/wkt.ts';
 import {
@@ -23,6 +26,10 @@ import {
 export type MapZone = { id: string; name: string; geometry: Geometry };
 
 interface MapViewProps {
+  // §12: the map is one of the three-language screens, and it may not choose a language for itself.
+  // `lang` is a control value the caller already validated (R-M1-14), so a wrong one throws here
+  // rather than silently rendering Arabic copy to a French-speaking guardian.
+  lang: CatalogLang;
   childName: string;
   // The chosen reading (Task 5's resolveSourceReadings) or null when no source reported one.
   position: ServerPosition | null;
@@ -52,7 +59,21 @@ const popupRow = (key: string, value: string) => `
     <strong style="direction:ltr;">${value}</strong>
   </div>`;
 
+// §12's colour-blind rule in data form: every freshness state has a SHAPE, and the legend lists them
+// as shape→fact pairs so the panel cannot drift out of sync with what childIconHtml actually emits.
+// The silent row reuses `position.noDataFromServer` — one sentence for one fact, in one place.
+const LEGEND_SHAPES = [
+  ['map.legendArrowShape', 'map.legendArrowNote'],
+  ['map.legendDotShape', 'map.legendDotNote'],
+  ['map.legendSilentShape', 'position.noDataFromServer'],
+  ['map.legendAgingShape', 'map.legendAgingNote'],
+  ['map.legendRingShape', 'map.legendRingNote'],
+  ['map.legendZoneShape', 'map.legendZoneNote'],
+  ['map.legendTrackShape', 'map.legendTrackNote'],
+] as const;
+
 export const MapView: React.FC<MapViewProps> = ({
+  lang,
   childName,
   position,
   freshness,
@@ -74,6 +95,10 @@ export const MapView: React.FC<MapViewProps> = ({
 
   const [isAutoFollow, setIsAutoFollow] = useState<boolean>(false);
   const [isLegendOpen, setIsLegendOpen] = useState<boolean>(false);
+  // One shorthand for the whole file: copy is a catalog key plus the caller's language. A missing key
+  // throws on purpose — the parity guard in tests/app/positions.test.ts fails the suite first.
+  const t = (key: string, vars?: Record<string, string | number>) => translate(key, lang, vars);
+  const dir = lang === 'ar' ? 'rtl' : 'ltr';
   // Only used to re-run the update effect when the zoom changes: the ring's metre radius is fixed,
   // so what the guardian sees of it is a function of the zoom level.
   const [zoomLevel, setZoomLevel] = useState<number>(1);
@@ -151,7 +176,9 @@ export const MapView: React.FC<MapViewProps> = ({
     if (!map) return;
 
     // ── 1. The child: a pin exists only for a real fix ──────────────────────────────────────────
-    const fix = position ? childFixLatLng(position.latitude, position.longitude) : null;
+    // The conflict banner promises that NEITHER source is shown, so the marker path keeps that
+    // promise itself rather than relying on Task 9 to pass `position: null` alongside it.
+    const fix = !sourceConflict && position ? childFixLatLng(position.latitude, position.longitude) : null;
     const icon = childIconHtml({
       course: position?.course ?? null,
       freshness,
@@ -184,15 +211,15 @@ export const MapView: React.FC<MapViewProps> = ({
       const safeName = escapeHtml(childName);
       const speed = position ? kmPerHour(position) : null;
       const popupHtml = `
-        <div style="font-family:system-ui,sans-serif;text-align:right;direction:rtl;padding:6px;min-width:210px;box-sizing:border-box;color:#0f172a;">
+        <div style="font-family:system-ui,sans-serif;text-align:${dir === 'rtl' ? 'right' : 'left'};direction:${dir};padding:6px;min-width:210px;box-sizing:border-box;color:#0f172a;">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid #e2e8f0;padding-bottom:6px;margin-bottom:8px;">
             <strong style="font-size:14px;line-height:1.3;">${safeName}</strong>
             <span style="width:10px;height:10px;border-radius:50%;border:2px solid ${icon.tone};display:inline-block;"></span>
           </div>
           <div style="font-size:12px;color:#334155;line-height:1.6;">
-            ${popupRow('آخر قراءة', label ? escapeHtml(label) : '—')}
-            ${popupRow('الإحداثيات', `${fix[0].toFixed(5)}, ${fix[1].toFixed(5)}`)}
-            ${speed === null ? '' : popupRow('السرعة', `${Math.round(speed)} كم/س`)}
+            ${popupRow(t('map.lastReading'), label ? escapeHtml(label) : '—')}
+            ${popupRow(t('map.coordinates'), `${fix[0].toFixed(5)}, ${fix[1].toFixed(5)}`)}
+            ${speed === null ? '' : popupRow(t('map.speed'), `${Math.round(speed)} ${t('map.speedUnit')}`)}
           </div>
         </div>`;
 
@@ -247,9 +274,9 @@ export const MapView: React.FC<MapViewProps> = ({
         }).addTo(map);
         const name = escapeHtml(zone.name);
         circle.bindPopup(`
-          <div style="font-family:system-ui,sans-serif;text-align:right;direction:rtl;padding:2px;color:#0f172a;">
+          <div style="font-family:system-ui,sans-serif;text-align:${dir === 'rtl' ? 'right' : 'left'};direction:${dir};padding:2px;color:#0f172a;">
             <strong style="color:#047857;">🏰 ${name}</strong><br/>
-            <span style="font-size:11px;color:#475569;">نصف القطر: ${Math.round(geometry.radiusMeters)} متر</span>
+            <span style="font-size:11px;color:#475569;">${t('map.radiusMeters', { radius: Math.round(geometry.radiusMeters) })}</span>
           </div>`);
         zoneLayersRef.current.push(circle);
 
@@ -324,7 +351,7 @@ export const MapView: React.FC<MapViewProps> = ({
     if (isAutoFollow && fix) {
       map.flyTo(fix, zoomForRing(position?.accuracy ?? null, fix[0]), { animate: true, duration: 1 });
     }
-  }, [position, freshness, label, zones, history, sourceConflict, isAutoFollow, zoomLevel]);
+  }, [lang, childName, position, freshness, label, zones, history, sourceConflict, isAutoFollow, zoomLevel]);
 
   const handleRecenterOnChild = () => {
     const map = mapRef.current;
@@ -352,7 +379,7 @@ export const MapView: React.FC<MapViewProps> = ({
 
       {sourceConflict && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-amber-950/95 text-amber-100 border border-amber-500/60 rounded-2xl px-3 py-2 text-[11px] font-bold shadow-2xl">
-          ⚠️ مصدران للموقع يتعارضان: لا يُعرض أيٌّ منهما على الخريطة
+          {t('map.sourceConflict')}
         </div>
       )}
 
@@ -360,7 +387,7 @@ export const MapView: React.FC<MapViewProps> = ({
         <button
           onClick={handleRecenterOnChild}
           className="h-11 w-11 sm:h-12 sm:w-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl border border-emerald-400/60 shadow-2xl backdrop-blur-md flex items-center justify-center transition-all active:scale-95 group shrink-0"
-          title="إعادة التركيز على آخر موقع بلّغ عنه الخادم"
+          title={t('map.recenterTitle')}
         >
           <div className="p-1 rounded-xl bg-white/20 text-white group-hover:scale-110 transition-transform">
             <LocateFixed className="w-5 h-5" />
@@ -370,7 +397,7 @@ export const MapView: React.FC<MapViewProps> = ({
         <button
           onClick={() => mapRef.current?.zoomIn()}
           className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-slate-900/95 hover:bg-slate-800 text-emerald-400 hover:text-white transition-all active:scale-90 flex items-center justify-center border border-slate-700/80 shadow-2xl backdrop-blur-md shrink-0"
-          title="تكبير الخريطة (+)"
+          title={t('map.zoomInTitle')}
         >
           <ZoomIn className="w-5 h-5 text-emerald-400" />
         </button>
@@ -378,7 +405,7 @@ export const MapView: React.FC<MapViewProps> = ({
         <button
           onClick={() => mapRef.current?.zoomOut()}
           className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-slate-900/95 hover:bg-slate-800 text-amber-400 hover:text-white transition-all active:scale-90 flex items-center justify-center border border-slate-700/80 shadow-2xl backdrop-blur-md shrink-0"
-          title="تصغير الخريطة (-)"
+          title={t('map.zoomOutTitle')}
         >
           <ZoomOut className="w-5 h-5 text-amber-400" />
         </button>
@@ -386,7 +413,7 @@ export const MapView: React.FC<MapViewProps> = ({
         <button
           onClick={handleFitAllBounds}
           className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-slate-900/95 hover:bg-slate-800 text-blue-400 hover:text-white transition-all active:scale-90 flex items-center justify-center border border-slate-700/80 shadow-2xl backdrop-blur-md shrink-0"
-          title="عرض جميع المناطق والطفل معاً على الخريطة"
+          title={t('map.fitAllTitle')}
         >
           <Maximize2 className="w-5 h-5 text-blue-400" />
         </button>
@@ -398,7 +425,7 @@ export const MapView: React.FC<MapViewProps> = ({
               ? 'bg-emerald-950/95 border-emerald-500 text-emerald-300'
               : 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 border-slate-700/80'
           }`}
-          title={isAutoFollow ? 'إيقاف التتبع التلقائي' : 'تفعيل التتبع التلقائي'}
+          title={t(isAutoFollow ? 'map.followOffTitle' : 'map.followOnTitle')}
         >
           <span className="text-base" aria-hidden="true">🔄</span>
         </button>
@@ -409,10 +436,10 @@ export const MapView: React.FC<MapViewProps> = ({
           <button
             onClick={() => setIsLegendOpen(true)}
             className="bg-slate-900/95 hover:bg-slate-800 text-slate-200 px-3 py-2 rounded-2xl border border-slate-700/80 shadow-2xl backdrop-blur-md flex items-center gap-2 text-xs font-bold transition-all active:scale-95 group"
-            title="عرض مفاتيح الخريطة والرموز"
+            title={t('map.legendOpenTitle')}
           >
             <span className="text-sm group-hover:rotate-12 transition-transform">🗺️</span>
-            <span className="text-xs font-extrabold">مفاتيح الخريطة</span>
+            <span className="text-xs font-extrabold">{t('map.legendTitle')}</span>
             <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
           </button>
         ) : (
@@ -420,43 +447,26 @@ export const MapView: React.FC<MapViewProps> = ({
             <div className="flex items-center justify-between font-bold border-b border-slate-800 pb-1.5 text-emerald-400">
               <span className="flex items-center gap-1.5 font-extrabold">
                 <span>🗺️</span>
-                <span>مفاتيح الخريطة</span>
+                <span>{t('map.legendTitle')}</span>
               </span>
               <button
                 onClick={() => setIsLegendOpen(false)}
                 className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
-                title="إخفاء مفتاح الخريطة"
+                title={t('map.legendCloseTitle')}
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            {/* §12: the states differ by SHAPE, so the legend says so in shapes, not colours. */}
+            {/* §12: the states differ by SHAPE, so the legend says so in shapes, not colours. Each row
+                is one catalog pair (the shape, then the fact it stands for) — no copy lives here. */}
             <div className="space-y-1.5 text-[11px] text-slate-200">
-              <div className="flex items-center justify-between bg-slate-800/60 p-1.5 rounded-xl border border-slate-700/40">
-                <span className="font-bold">سهم ▲</span>
-                <span className="text-[10px] text-slate-400">الخادم أرسل اتجاهًا</span>
-              </div>
-              <div className="flex items-center justify-between bg-slate-800/60 p-1.5 rounded-xl border border-slate-700/40">
-                <span className="font-bold">نقطة ●</span>
-                <span className="text-[10px] text-slate-400">موقع بلا اتجاه</span>
-              </div>
-              <div className="flex items-center justify-between bg-slate-800/60 p-1.5 rounded-xl border border-slate-700/40">
-                <span className="font-bold">علامة ؟ بحواف متقطّعة</span>
-                <span className="text-[10px] text-slate-400">لا بيانات من الخادم</span>
-              </div>
-              <div className="flex items-center justify-between bg-slate-800/60 p-1.5 rounded-xl border border-slate-700/40">
-                <span className="font-bold">دائرة متقطّعة حول الطفل</span>
-                <span className="text-[10px] text-slate-400">دقّة آخر قراءة بمقياسها الحقيقي</span>
-              </div>
-              <div className="flex items-center justify-between bg-slate-800/60 p-1.5 rounded-xl border border-slate-700/40">
-                <span className="font-bold">🏰 منطقة</span>
-                <span className="text-[10px] text-slate-400">الشكل كما يخزّنه الخادم</span>
-              </div>
-              <div className="flex items-center justify-between bg-slate-800/60 p-1.5 rounded-xl border border-slate-700/40">
-                <span className="font-bold">خط الحركة</span>
-                <span className="text-[10px] text-slate-400">قراءات سابقة مُبلَّغ بها</span>
-              </div>
+              {LEGEND_SHAPES.map(([shapeKey, noteKey]) => (
+                <div key={shapeKey} className="flex items-center justify-between bg-slate-800/60 p-1.5 rounded-xl border border-slate-700/40">
+                  <span className="font-bold">{t(shapeKey)}</span>
+                  <span className="text-[10px] text-slate-400">{t(noteKey)}</span>
+                </div>
+              ))}
             </div>
           </div>
         )}
