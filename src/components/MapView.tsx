@@ -5,8 +5,11 @@
 // measurement, not a preference — the shipped v1.3 build drew a child pin at a fabricated Algiers
 // centre with an "all safe" badge for a position no source ever reported (audited on a guardian's
 // phone, 2026-10-11). A pin therefore requires a real fix, and the drawing code holds no fallback
-// numbers. All copy comes from src/translations/catalog.ts: the file carries no literal string, so
-// the fr/en screens are as translatable as the Arabic one (§12: no scattered copy inside a component).
+// numbers. Every sentence this screen says comes from src/translations/catalog.ts, so the fr/en
+// screens are as translatable as the Arabic one (§12: no scattered copy inside a component). What the
+// machine guard actually bans is any Arabic codepoint in this file plus a hard-coded RTL layout; the
+// literals that remain are language-neutral by construction — decorative emoji and the em-dash that
+// stands in for an absent value.
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -295,7 +298,7 @@ export const MapView: React.FC<MapViewProps> = ({
             fillOpacity: 0.12,
             weight: 2,
           }).addTo(map);
-          polygon.bindPopup(`<div style="direction:rtl;color:#047857;">🏰 ${escapeHtml(zone.name)}</div>`);
+          polygon.bindPopup(`<div style="direction:${dir};color:#047857;">🏰 ${escapeHtml(zone.name)}</div>`);
           zoneLayersRef.current.push(polygon);
         }
       } else if (geometry.kind === 'linestring') {
@@ -304,7 +307,7 @@ export const MapView: React.FC<MapViewProps> = ({
           .filter((p): p is [number, number] => p !== null);
         if (routePoints.length >= 2) {
           const route = L.polyline(routePoints, { color: ZONE_TONE, weight: 3, opacity: 0.7 }).addTo(map);
-          route.bindPopup(`<div style="direction:rtl;color:#047857;">🛣️ ${escapeHtml(zone.name)}</div>`);
+          route.bindPopup(`<div style="direction:${dir};color:#047857;">🛣️ ${escapeHtml(zone.name)}</div>`);
           zoneLayersRef.current.push(route);
         }
       }

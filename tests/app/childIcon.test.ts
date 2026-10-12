@@ -289,6 +289,10 @@ test('MapView carries no literal copy: every string is a catalog key and the lan
   assert.doesNotMatch(src, /[؀-ۿ]/, 'the map must read its copy from src/translations/catalog.ts');
   assert.match(src, /lang: CatalogLang/, 'the map cannot choose a language for itself');
   assert.match(src, /import \{[^}]*translate[^}]*\} from '\.\.\/translations\/catalog\.ts'/);
+  // Layout follows the language too. A hard-coded `direction:rtl` carries no Arabic codepoint, so the
+  // ban above cannot see it — and it would put a French guardian's zone popup on the wrong side.
+  assert.doesNotMatch(src, /direction:rtl/, 'the popup direction must follow lang, never a literal rtl');
+  assert.match(src, /direction:\$\{dir\}/, 'the direction must come from the language the caller passed');
 });
 
 // The conflict banner claims «لا يُعرض أيٌّ منهما على الخريطة». A banner that lies about the pin is a
