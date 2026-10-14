@@ -57,6 +57,11 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
+        <!-- Google Play: Stalkerware & Monitoring Applications policy -->
+        <meta-data
+            android:name="isMonitoringTool"
+            android:value="child_monitoring" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
