@@ -17,14 +17,18 @@ import {
   CheckInRequest,
 } from './types';
 import { Language } from './translations';
-import { isCatalogLang } from './translations/catalog.ts';
+import { isCatalogLang, translate } from './translations/catalog.ts';
 import { noDataLabel, type Freshness } from './services/traccar/positions.ts';
-import type { ServerPosition } from './services/traccar/types.ts';
-import { childFixLatLng } from './components/map/childIcon';
+import type { ServerPosition, ServerGeofence } from './services/traccar/types.ts';
 import type { MapZone } from './components/MapView';
+import { activeClient } from './services/traccar/session.ts';
+import { useSession } from './state/session.ts';
+import { createZoneService, type ZoneDraft } from './services/traccar/zones.ts';
+import { parseWkt } from './services/traccar/wkt.ts';
 import { Navbar } from './components/Navbar';
 import { ParentDashboard } from './components/ParentDashboard';
 import { ChildView } from './components/ChildView';
+import { ZonesScreen } from './components/ZonesScreen';
 import { SettingsModal } from './components/SettingsModal';
 
 import { GeofenceMonitor } from './services/GeofenceMonitor';
@@ -40,39 +44,13 @@ import { SmsService } from './services/SmsService';
 import { verifyPin } from './services/SecurityUtils';
 import { ProtectionStateService } from './services/ProtectionStateService';
 
-const SAFE_ZONES_KEY = 'kidguard_safe_zones';
 const ROLE_KEY = 'kidguard_role';
 const LANG_KEY = 'kidguard_lang';
 
-function loadSafeZones(): SafeZone[] {
-  try {
-    const raw = localStorage.getItem(SAFE_ZONES_KEY);
-    if (!raw) return [];
-
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-
-    // Remove legacy demo zones so they can never be used for real tracking.
-    const zones = parsed.filter(
-      (zone): zone is SafeZone =>
-        zone && zone.id !== 'zone_school_1' && zone.id !== 'zone_home_2'
-    );
-    if (zones.length !== parsed.length) {
-      localStorage.setItem(SAFE_ZONES_KEY, JSON.stringify(zones));
-    }
-    return zones;
-  } catch {
-    return [];
-  }
-}
-
-function saveSafeZones(zones: SafeZone[]) {
-  try {
-    localStorage.setItem(SAFE_ZONES_KEY, JSON.stringify(zones));
-  } catch {
-    // ignore
-  }
-}
+// AC-2 (Task 8): the zone record lives on the SERVER (GET/POST /api/geofences via zones.ts), so the
+// old `kidguard_safe_zones` localStorage key is GONE — there is nothing here to load and nothing to
+// save. The `safeZones` state below is only the legacy in-memory prototype loop that the child-role
+// RiskEngine still consumes until Task 11 removes that branch; it is never persisted.
 
 export default function App() {
   const [role, setRole] = useState<DeviceRole>(() => {
@@ -107,7 +85,21 @@ export default function App() {
     isMockLocation: false,
   });
 
-  const [safeZones, setSafeZones] = useState<SafeZone[]>(() => loadSafeZones());
+  const [safeZones, setSafeZones] = useState<SafeZone[]>([]);
+
+  // The session store (Task 6) is the only thing that can hand App a server client. `activeClient()`
+  // returns the SAME signed-in client `signIn` built, or null when nobody is signed in — and a null
+  // service is what ZonesScreen shows as «sign in required», never a fabricated local list (AC-2).
+  // The memo re-reads it whenever the session status changes, so signing in is what makes it live.
+  const session = useSession();
+  const zoneService = useMemo(() => {
+    const client = activeClient();
+    return client ? createZoneService({ client }) : null;
+  }, [session.status]);
+  // The zones the map draws once a session exists: the server's own re-read (listZones after every
+  // write), never a local record.
+  const [serverZones, setServerZones] = useState<ServerGeofence[]>([]);
+
   const [alertHistory, setAlertHistory] = useState<LoggedAlert[]>(() =>
     AlertPolicyManager.getInstance().getAlertHistory()
   );
@@ -175,6 +167,29 @@ export default function App() {
   useEffect(() => {
     refreshOfflineCount();
   }, [refreshOfflineCount]);
+
+  // The map's saved-zone outlines are the SERVER's too. When a session hands us a zone service, the
+  // list is read from `/geofences` (listZones) on login and refreshed after every ZonesScreen write;
+  // with no service the map draws nothing, because there is no longer a local record to fall back to.
+  useEffect(() => {
+    if (!zoneService) {
+      setServerZones([]);
+      return;
+    }
+    let alive = true;
+    zoneService
+      .listZones()
+      .then((rows) => {
+        if (alive) setServerZones(rows);
+      })
+      .catch(() => {
+        // The map keeps no outline it was not given; ZonesScreen names the failure on its own screen.
+        if (alive) setServerZones([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [zoneService]);
 
   const runEvaluation = useCallback(
     async (currentLoc: LocationPoint, zones: SafeZone[]) => {
@@ -463,32 +478,10 @@ export default function App() {
   // v1.3 build put at 36.7538/3.0588. The legacy `location` state is the ADULT's own geolocation —
   // feeding it to the child's map is the exact confusion that audit measured.
 
-  const handleSaveSafeZone = (zoneData: Omit<SafeZone, 'id' | 'createdAt'>) => {
-    const newZone: SafeZone = {
-      ...zoneData,
-      id: `zone_${Date.now()}`,
-      createdAt: Date.now(),
-    };
-    const updated = [...safeZones, newZone];
-    setSafeZones(updated);
-    saveSafeZones(updated);
-    runEvaluation(location, updated);
-  };
-
-  const handleDeleteSafeZone = (zoneId: string) => {
-    const confirmMsg =
-      lang === 'ar'
-        ? 'هل أنت متأكد من حذف هذه المنطقة الآمنة؟'
-        : lang === 'fr'
-        ? 'Êtes-vous sûr de vouloir supprimer cette zone sûre ?'
-        : 'Are you sure you want to delete this safe zone?';
-    if (!window.confirm(confirmMsg)) return;
-
-    const updated = safeZones.filter((z) => z.id !== zoneId);
-    setSafeZones(updated);
-    saveSafeZones(updated);
-    runEvaluation(location, updated);
-  };
+  // AC-2: zone records are the SERVER's. There is no local save: the old `saveSafeZones` helper and
+  // its `kidguard_safe_zones` key were removed, and the zones tab renders ZonesScreen (below), which
+  // reads back from `GET /geofences` after every write. `safeZones` remains only as the in-memory
+  // prototype list the child-role RiskEngine consumes until Task 11 removes that branch.
 
   const handleUpdateAlertPolicy = (newConfig: Partial<typeof alertPolicy>) => {
     alertPolicyManager.updateConfig(newConfig);
@@ -608,20 +601,18 @@ export default function App() {
     setIsSettingsModalOpen(true);
   };
 
-  // The zones the map may draw. Legacy storage keeps centre+radius, which is already a circle
-  // geometry; anything the store holds that is not a real coordinate is dropped, never defaulted.
-  const mapZones = useMemo<MapZone[]>(() => (safeZones || [])
-    .filter((zone) => zone.active)
+  // The zones the map may draw are the SERVER's, read from `GET /geofences` on sign-in and after
+  // every ZonesScreen write. Each stored area is read through the one module that knows the
+  // `lat lon` order; an area we cannot parse is dropped, never defaulted (AC-2).
+  const mapZones = useMemo<MapZone[]>(() => serverZones
     .map((zone) => {
-      const center = childFixLatLng(zone.latitude, zone.longitude);
-      if (!center || !Number.isFinite(zone.radius) || zone.radius <= 0) return null;
-      return {
-        id: zone.id,
-        name: zone.name,
-        geometry: { kind: 'circle' as const, lat: center[0], lon: center[1], radiusMeters: zone.radius },
-      };
+      try {
+        return { id: String(zone.id), name: zone.name, geometry: parseWkt(zone.area) };
+      } catch {
+        return null;
+      }
     })
-    .filter((zone): zone is MapZone => zone !== null), [safeZones]);
+    .filter((zone): zone is MapZone => zone !== null), [serverZones]);
 
   // Task 9 supplies these from the server. A child track is server data too, so none is shown yet.
   const childPosition: ServerPosition | null = null;
@@ -741,8 +732,14 @@ export default function App() {
             alertPolicy={alertPolicy}
             pairingInfo={pairingInfo}
             lang={lang}
-            onSaveSafeZone={handleSaveSafeZone}
-            onDeleteSafeZone={handleDeleteSafeZone}
+            zonesPanel={
+              <ZonesScreen
+                lang={lang}
+                service={zoneService}
+                isAdmin={session.user?.admin === true}
+                childName={alertPolicy.childName}
+              />
+            }
             onUpdateAlertPolicy={handleUpdateAlertPolicy}
             onSyncNow={handleSyncNow}
             onTriggerSiren={handleToggleSiren}

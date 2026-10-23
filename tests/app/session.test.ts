@@ -36,10 +36,13 @@ const FAKE_TOKEN = 'labfake-7JdK2mQ9xR4tY8pL1wZ6vB3nM5cX0aS9d';
 const TOKEN_PREFIX = FAKE_TOKEN.slice(0, 7);
 const EXPIRES_AT = '2026-11-01T00:00:00.000Z';
 
+// What the app HOLDS for this user (the parsed shape, whitelisted by toServerUser).
 const USER_FIELDS = { id: 7, name: 'lab guardian a', email: EMAIL, admin: true };
-// Traccar really does serialise a `password` field and a `totpKey` in the User it returns from
-// POST /session (measured field list, 007 §1) — so the layer must strip them, not hand them onward.
-const USER_JSON = JSON.stringify({ ...USER_FIELDS, password: SERVER_PASSWORD_FIELD, totpKey: 'NOTREAL', attributes: {} });
+// What the SERVER sends, field-for-field as measured in 007 §1: the admin bit is named `administrator`
+// on the wire. Traccar really does serialise a `password` field and a `totpKey` in the User it
+// returns from POST /session — so the layer must strip them, not hand them onward.
+const SERVER_USER_FIELDS = { id: 7, name: 'lab guardian a', email: EMAIL, administrator: true };
+const USER_JSON = JSON.stringify({ ...SERVER_USER_FIELDS, password: SERVER_PASSWORD_FIELD, totpKey: 'NOTREAL', attributes: {} });
 
 type Seen = { method: string; url: string; body: string; contentType: string; authorization: string | undefined };
 type Outcome = { status: number; body?: string; contentType?: string };
@@ -177,6 +180,33 @@ test('session (أ): a successful sign-in hands on the server User and keeps the 
     assert.equal(posts[0].body, `email=${encodeURIComponent(EMAIL)}&password=${PASSWORD}`, 'the exact form body put on the wire');
     assert.doesNotMatch(JSON.stringify(printed.value), /password|totpKey|sup3rs3cret/i, JSON.stringify(printed.value));
     assert.equal(printed.lines.length, 0, `sign-in printed: ${printed.lines.join(' | ')}`);
+  } finally { await srv.close(); resetSession(); }
+});
+
+// The live AC-2 run of Task 8 (2026-10-23) measured a User whose `administrator` was true yet whose
+// parsed `admin` was undefined, because the wire name is `administrator` (007 §1). This pins both
+// directions so the gate can never silently read a name the server does not send.
+test('session (أ): the admin bit is read from the measured wire name `administrator`, not `admin`', async () => {
+  resetSession();
+  const srv = await withFakeTraccar((seen) =>
+    seen.method === 'POST' && seen.url === '/api/session'
+      ? { status: 200, body: JSON.stringify({ id: 9, email: EMAIL, administrator: true }) }
+      : { status: 404, body: '' });
+  try {
+    const user = await signIn({ baseUrl: srv.url, email: EMAIL, password: PASSWORD });
+    assert.equal(user.admin, true, '6.16.0 sends `administrator`; reading only `admin` closed the gate on every real admin');
+  } finally { await srv.close(); resetSession(); }
+});
+
+test('session (أ): an `admin` key alone does NOT confer administrator — the wire name is reverse-sensitive', async () => {
+  resetSession();
+  const srv = await withFakeTraccar((seen) =>
+    seen.method === 'POST' && seen.url === '/api/session'
+      ? { status: 200, body: JSON.stringify({ id: 9, email: EMAIL, admin: true }) }
+      : { status: 404, body: '' });
+  try {
+    const user = await signIn({ baseUrl: srv.url, email: EMAIL, password: PASSWORD });
+    assert.equal(user.admin, undefined, 'the server field is `administrator`; `admin` is not evidence of anything');
   } finally { await srv.close(); resetSession(); }
 });
 

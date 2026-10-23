@@ -42,6 +42,16 @@ export function currentUser(): ServerUser | null {
   return active?.user ?? null;
 }
 
+// The client the signed-in guardian's requests ride — the SAME Task 3 client `signIn` built, so a
+// zone write goes out under the identical timeout, abort and secret-free error path as every other
+// call. It is exposed as an object, never destructured: the password stays closed over inside it and
+// the minted token is not a property of it, so nothing a screen could render leaks a credential. A
+// screen that needs to talk to the server (Task 8's zone service) takes this; when nobody is signed in
+// there is no client and it returns null rather than a client pointed at nothing.
+export function activeClient(): TraccarClient | null {
+  return active?.client ?? null;
+}
+
 // Drops the local record without asking the server anything. This is the recovery path the state
 // layer takes when an identity check proves the session is gone; it is NOT a logout, because the
 // cookie session and any minted token are still alive on the server — signOut() is the route that
@@ -65,7 +75,10 @@ function toServerUser(value: unknown): ServerUser {
   }
   const user: ServerUser = { id, email };
   if (typeof source.name === 'string' && source.name !== '') user.name = source.name;
-  if (typeof source.admin === 'boolean') user.admin = source.admin;
+  // 007 §1 measured the live 6.16.0 User JSON: the admin bit is `administrator`, never `admin`.
+  // Reading `admin` silently judged every real administrator a viewer and closed the Task 8 gate —
+  // caught by the live AC-2 run (2026-10-23). The parsed shape this app holds keeps the short name.
+  if (typeof source.administrator === 'boolean') user.admin = source.administrator;
   return user;
 }
 

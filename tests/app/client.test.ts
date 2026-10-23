@@ -75,17 +75,18 @@ test('the password and the auth header never appear in the error message', async
   } finally { await srv.close(); }
 });
 
-test('a query object becomes a sorted, repeated-free query string', async () => {
-  let url = '';
-  const srv = await withServer((req, res) => { url = req.url ?? ''; res.writeHead(200); res.end('[]'); });
+test('a query object keeps the CALLER key order — /permissions reads are order-sensitive', async () => {
+  const urls: string[] = [];
+  const srv = await withServer((req, res) => { urls.push(req.url ?? ''); res.writeHead(200); res.end('[]'); });
   try {
     const client = createTraccarClient({ baseUrl: srv.url, credentials: { email: 'a@b.example', password: 'x' } });
-    await client.get('/positions', { deviceId: 7, to: '2026-10-08T00:00:00Z', from: '2026-10-07T00:00:00Z' });
-    // srv.url is `http://127.0.0.1:<port>/api`, so the request line the server sees carries the
-    // `/api` prefix the client keeps: req.url === '/api/positions?…'. The assertion below pins the
-    // measured behaviour (deviceId first, then from before to, one shape, no repeat).
-    assert.match(url, /^\/api\/positions\?deviceId=7&from=/);
-    assert.ok(url.indexOf('from') < url.indexOf('to'), url);
+    // Measured live on Traccar 6.16.0 (2026-10-23): ?userId=2&notificationId=0 answers 200, while
+    // the alphabetically sorted ?notificationId=0&userId=2 answers 400 ("Table TC_NOTIFICATION_USER
+    // not found"). The pair's FIRST key selects the relation, so the client must not reorder.
+    await client.get('/permissions', { userId: 2, notificationId: 0 });
+    await client.get('/permissions', { notificationId: 0, userId: 2 });
+    assert.equal(urls[0], '/api/permissions?userId=2&notificationId=0');
+    assert.equal(urls[1], '/api/permissions?notificationId=0&userId=2', 'the client passes the order through unchanged');
   } finally { await srv.close(); }
 });
 

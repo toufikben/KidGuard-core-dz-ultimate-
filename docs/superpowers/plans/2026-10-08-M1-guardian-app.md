@@ -59,6 +59,18 @@
 | مضلّع بنقطتين يرفضه الخادم (`commaTokens.length < 3` ⇒ `ParseException`) ⇒ قاعدة «≥3 نقاط» ليست ذوقنا المحلي | `geofence/GeofencePolygon.java:146-149` |
 | مُبقّى المعمل يُطابق نفس التنسيق ⇒ لا تعارض مصدرين: `circleArea`/`polylineArea` تُخرج `CIRCLE (…) وLINESTRING (…, …)` و`polylineDistance` **رقم بالمتر** | `lab/sink/lib/geo.mjs:12-18,26-35` + `lab/tests/geo.test.mjs:18` (`'LINESTRING (36.7538 3.0588, 36.7548 3.0598)'`) |
 
+ومن قياس معمل 6.16.0 الحيّ بتاريخ 2026-10-23 (أثره الحرفي في `lab/report/evidence/009-m1-ac2-zone-on-server.md`):
+
+| القياس | النتيجة |
+|---|---|
+| `PUT /api/geofences` على المجموعة | **405**؛ و`PUT /api/geofences/{id}` **200** ⇒ التحديث بالمُعرِّف وحده |
+| `DELETE /api/geofences?id=` | **405** والسجل يبقى؛ و`DELETE /api/geofences/{id}` **204** ⇒ الحذف بالمُعرِّف وحده |
+| كتابتنا `POLYGON((…))` بلا مسافة بعد الاسم | **مقبولة** وتُعاد كما خُزّنت حرفيّاً بنفس البايتات (صيغة الخادم نفسه `POLYGON ((…` بمسافة) ⇒ القراءة تقبل الصيغتين |
+| `polylineDistance: 0` صريح | يُخزَّن **رقم 0** ولا يُستبدل بالافتراضي 25 ⇒ الهامش الصفري قرار المشرف لا عطل قراءة |
+| قراءة `/api/permissions`: **المفتاح الأول يسمّي جدول العلاقة** | `?userId=2&notificationId=0` **200** مقابل `?notificationId=0&userId=2` **400 `Table "TC_NOTIFICATION_USER" not found`**؛ `?userId=0&geofenceId=38` **200** مقابل `?geofenceId=38&userId=0` **400 `TC_GEOFENCE_USER`**؛ `?deviceId=0&geofenceId=38` **200** مقابل `?geofenceId=38&deviceId=0` **400 `TC_GEOFENCE_DEVICE`**؛ `?deviceId=1&notificationId=0` **200** مقابل `?notificationId=0&deviceId=1` **400 `TC_NOTIFICATION_DEVICE`**؛ ومفتاح وحيد ⇒ **400 `ArrayIndexOutOfBoundsException: Index 1 out of bounds for length 1`** ⇒ العميل **لا يعيد ترتيب مفاتيح المستدعي** أبداً |
+| صفوف الصلاحيات الحيّة | بأعمدة **UPPERCASE** (`USERID`,`DEVICEID`,`GEOFENCEID`,`NOTIFICATIONID`) ⇒ القراءة تقبل الحالتين |
+| مستخدم الخادم الحيّ | يسمّي بتّ المسؤول **`administrator`** لا `admin` |
+
 ومن قياس هذا الجهاز بتاريخ 2026-10-08 (قبل كتابة الخطة، لأن الخطة لا تُبنى على توقّع):
 
 | القياس | النتيجة |
@@ -1057,6 +1069,8 @@ grep -rn "\.\./lab\|@/lab\|from 'lab/" src/ && echo "FAIL: src/ imports lab/" ||
 
 **R-M1-13 — قياسان تركهما مراجعة Task 4 بلا تأكيد (هنا يُقاسان، ولا يُورَّثان لافتراضين):** (١) هل يقبل محلّل Traccar كتابةَنا بلا مسافة `POLYGON((…`؟ الأثر المطبوع من الأداة يعيد `area=` كما خزّنه الخادم، فتكون النتيجة مقيسة: إن رجع المحلّل النصَّ بصيغة الخادم `POLYGON ((…` فقد قبله؛ وإن لم تُخزَّن المنطقة أصلاً (أو رجع `400`) فالكتابة يجب أن تضع المسافة، ويُصحَّح `toPolygonWkt` مع اختبار يُثبّت الصيغة العائدة. (٢) ماذا يفعل الخادم بـ`polylineDistance: 0` الصريح — يراه 0 متراً (نفق لا يدخله أحد أبداً) أم يسقطه ويأخذ 25؟ يُقاس بإنشاء مسار بـ0 ثم قراءة المنطقة مرّة أخرى بطريق الأداة وتسجيل **القيمة العائدة** رقميّاً، وبلا أي تشغيل سيناريو (لا حاجة له). كلا القياسين يُكتب أثرُهما في 008 بحروفه، وإن تعذّر أحدهما فالحكم **NOT RUN** لا نتيجة، ولا يصحّ أن تُقرأ ورقة المواصفة دليلاً على سلوك المفسّر. **وتُضاف الصيغتان إلى «حقائق مُثبَتة من المصدر/مقيسة»** في رأس الخطة إن تحقّقتا، وإلا بقيتا ثغرة مسمّاة في تقرير AC-2.
 
+**R-M1-20 (قياس يتقدّم على نصّ الموجز):** صياغة الموجز في Step 1(هـ) تكتب اتجاه ربط المنطقة `'geofenceId'→'deviceId'`، والقياس الحيّ (2026-10-23) يقول العكس: قراءة `GET /api/permissions` بـ`geofenceId` أولاً تردّ **400 `TC_GEOFENCE_DEVICE`**، وبـ`deviceId` أولاً تردّ **200**؛ والقاعدة نفسها على بقية العلاقات (أول مفتاح يسمّي جدول العلاقة). لذلك كل روابط `createZone` تُرسل **`deviceId` أولاً** (`{"deviceId":7,"geofenceId":5}`)، والاختبار المقيس في `tests/app/zones.test.ts` (سطر 240) يثبّت هذا الترتيب حرفيّاً. تُقرأ صياغة الموجز كوصف علاقة لا كترتيب مفاتيح، والنصّ المحكوم هو القياس.
+
 ```bash
 set -a; source lab/traccar/fanout.env; set +a   # نفس نافذة الفحص من Task 2، مسار بلا محتوى
 node tools/m1/api-probe.mjs > /tmp/ac2.txt 2>&1; echo "AC2_EXIT=$?"
@@ -1068,7 +1082,7 @@ grep -n 'lab-zone-m1-1' /tmp/ac2.txt
 **لا تُستعمل `curl -u "$LAB_ADMIN_EMAIL:$LAB_ADMIN_PASSWORD"` هنا** — كلمة المرور في وسائط العملية ترى ضوء الشمس في سجلّ الطرفية و`netstat`؛ أداة الفحص تقرأ env ولا تطبع السر، وهي المرجع الوحيد في هذه الخطة.
 
 إن تعذّر تشغيل الخادم فهذا **NOT RUN** ولا تُكتب AC-2 مُحقَّقة.
-- [ ] **Step 6: الأثر والدفعة** → `lab/report/evidence/008-m1-ac2-zone-on-server.md` + `feat(m1): zones drawn on the map and saved to the server (AC-2)`.
+- [ ] **Step 6: الأثر والدفعة** → `lab/report/evidence/009-m1-ac2-zone-on-server.md` + `feat(m1): zones drawn on the map and saved to the server (AC-2)`.
 
 ---
 

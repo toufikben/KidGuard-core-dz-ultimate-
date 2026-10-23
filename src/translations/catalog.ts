@@ -117,6 +117,90 @@ export const catalog: Record<string, CatalogEntry> = {
     fr: 'Lectures précédentes signalées',
     en: 'Previously reported readings',
   },
+
+  // Task 8 — zones drawn on the map and saved on the server (AC-2). These three lines are the whole
+  // alert/delete vocabulary; ZonesScreen.tsx holds no literal copy (the guard there fails otherwise).
+  // R-M1-10: a saved zone with no alert is a §4 lie, so the ABSENCE of a subscription is announced as
+  // its own fact — never softened into "already present"/"no change" (the wording the Task 2 probe
+  // review struck). Nothing here claims the child is safe; each names only what the server does/does not
+  // have. `zones.alert.missing` is byte-checked by tests/app/zones.test.ts against the /لا اشتراك/ regex.
+  'zones.alert.missing': {
+    ar: 'لا اشتراك تنبيه لهذه المنطقة على الخادم',
+    fr: "Aucun abonnement d'alerte pour cette zone sur le serveur",
+    en: 'No alert subscription for this zone on the server',
+  },
+  'zones.alert.failed': {
+    ar: 'تعذّر تحديث اشتراك التنبيه لهذه المنطقة',
+    fr: "Échec de la mise à jour de l'abonnement d'alerte pour cette zone",
+    en: 'Failed to update the alert subscription for this zone',
+  },
+  // (و): deleting a zone the child's device is still linked to would drop an evaluation the alerts
+  // run on, so the screen refuses and names the link — no half-saved state (AC-2 forbids localStorage).
+  'zones.delete.linked': {
+    ar: 'لا يمكن حذف هذه المنطقة: هي موصولة بجهاز',
+    fr: 'Suppression impossible : cette zone est liée à un appareil',
+    en: 'Cannot delete: this zone is still linked to a device',
+  },
+
+  // Task 8 Step 3 — the zones SCREEN (§6 seven types, drawing modes, active hours, admin-gated edit).
+  // Every string lives here so ZonesScreen.tsx can hold zero Arabic codepoints (R-M1-18); the guard in
+  // tests/app/zones.test.ts fails the suite if a literal returns to the component or if a key loses a
+  // language (the parity guard in positions.test.ts). Nothing below claims the child is safe/live —
+  // these describe shapes, the server, and the guardian's own rights, and each is re-read from the
+  // server on every save (AC-2: the server is the truth, never the local object).
+  'zones.title': { ar: 'المناطق', fr: 'Zones', en: 'Zones' },
+  'zones.serverIsTruth': {
+    ar: 'تُحفظ المناطق على الخادم وتُقرأ منه؛ لا سجلّ محلي لها',
+    fr: 'Les zones sont enregistrées et relues depuis le serveur ; aucun registre local',
+    en: 'Zones are saved on and read back from the server; there is no local register',
+  },
+  'zones.signedOut': {
+    ar: 'سجّل الدخول كمسؤول لإدارة المناطق',
+    fr: 'Connectez-vous en tant qu’administrateur pour gérer les zones',
+    en: 'Sign in as an administrator to manage zones',
+  },
+  'zones.loading': { ar: 'جارٍ قراءة المناطق من الخادم…', fr: 'Lecture des zones depuis le serveur…', en: 'Reading zones from the server…' },
+  'zones.empty': { ar: 'لا توجد مناطق على الخادم بعد', fr: 'Aucune zone sur le serveur pour le moment', en: 'No zones on the server yet' },
+  'zones.new': { ar: 'منطقة جديدة', fr: 'Nouvelle zone', en: 'New zone' },
+  // «من يعدّل»: the edit affordance. It is DISABLED for a non-admin (the write gate itself lives in the
+  // service, which reads whoAmI() from the server, not a local flag — R-M1-8).
+  'zones.edit': { ar: 'من يعدّل', fr: 'Modifier', en: 'Edit' },
+  'zones.save': { ar: 'حفظ على الخادم', fr: 'Enregistrer sur le serveur', en: 'Save to the server' },
+  'zones.saving': { ar: 'جارٍ الحفظ على الخادم…', fr: 'Enregistrement sur le serveur…', en: 'Saving to the server…' },
+  'zones.cancel': { ar: 'إلغاء', fr: 'Annuler', en: 'Cancel' },
+  'zones.delete': { ar: 'حذف', fr: 'Supprimer', en: 'Delete' },
+  'zones.nameLabel': { ar: 'اسم المنطقة', fr: 'Nom de la zone', en: 'Zone name' },
+  'zones.typeLabel': { ar: 'النوع', fr: 'Type', en: 'Type' },
+  'zones.modeLabel': { ar: 'أداة الرسم', fr: 'Outil de dessin', en: 'Drawing tool' },
+  'zones.mode.circle': { ar: 'دائرة (بالسحب)', fr: 'Cercle (glisser)', en: 'Circle (drag)' },
+  'zones.mode.polygon': { ar: 'مضلّع (بالنقر)', fr: 'Polygone (clic)', en: 'Polygon (click)' },
+  'zones.mode.route': { ar: 'مسار (نقاط متتالية)', fr: 'Tracé (points consécutifs)', en: 'Route (consecutive points)' },
+  'zones.radiusInput': { ar: 'نصف القطر بالمتر', fr: 'Rayon en mètres', en: 'Radius in metres' },
+  'zones.bufferInput': { ar: 'هامش المسار بالمتر', fr: 'Marge du tracé en mètres', en: 'Route buffer in metres' },
+  'zones.pointsCount': { ar: 'عدد النقاط: {count}', fr: 'Nombre de points : {count}', en: 'Point count: {count}' },
+  'zones.hoursLabel': { ar: 'الأوقات الفعّالة (سمة)', fr: 'Heures actives (attribut)', en: 'Active hours (attribute)' },
+  'zones.hoursFrom': { ar: 'من', fr: 'De', en: 'From' },
+  'zones.hoursTo': { ar: 'إلى', fr: 'À', en: 'To' },
+  'zones.centerHint': { ar: 'انقر على الخريطة لتحديد المركز', fr: 'Cliquez sur la carte pour fixer le centre', en: 'Click the map to set the centre' },
+  'zones.polygonHint': { ar: 'انقر لإضافة رؤوس المضلّع (٣ على الأقل)', fr: 'Cliquez pour ajouter des sommets (au moins 3)', en: 'Click to add polygon vertices (at least 3)' },
+  'zones.routeHint': { ar: 'انقر لإضافة نقاط المسار بالترتيب', fr: 'Cliquez pour ajouter les points du tracé dans l’ordre', en: 'Click to add route points in order' },
+  'zones.saved': { ar: 'حُفظت المنطقة على الخادم', fr: 'Zone enregistrée sur le serveur', en: 'Zone saved on the server' },
+  'zones.deleted': { ar: 'حُذفت المنطقة من الخادم', fr: 'Zone supprimée du serveur', en: 'Zone deleted from the server' },
+  // Saving an unfinished drawing would put a zone at (0, 0) — a real place in the Gulf of Guinea, not
+  // the school the guardian meant. The screen refuses with this line before any request.
+  'zones.needGeometry': {
+    ar: 'أكمل رسم المنطقة أولاً: مركز للدائرة، أو ٣ رؤوس للمضلّع، أو نقطتان للمسار',
+    fr: 'Terminez le dessin : un centre pour le cercle, 3 sommets pour le polygone ou 2 points pour le tracé',
+    en: 'Finish the drawing first: a centre for the circle, 3 vertices for the polygon or 2 points for the route',
+  },
+  // §6 seven zone types. الأوقات الفعّالة تُخزَّن كسمة، لا كنوع.
+  'zones.type.school': { ar: 'مدرسة', fr: 'École', en: 'School' },
+  'zones.type.home': { ar: 'بيت', fr: 'Domicile', en: 'Home' },
+  'zones.type.park': { ar: 'حديقة', fr: 'Parc', en: 'Park' },
+  'zones.type.outing': { ar: 'نزهة', fr: 'Sortie', en: 'Outing' },
+  'zones.type.mosque': { ar: 'مسجد', fr: 'Mosquée', en: 'Mosque' },
+  'zones.type.activity': { ar: 'نشاط', fr: 'Activité', en: 'Activity' },
+  'zones.type.relative': { ar: 'بيت قريب', fr: 'Chez un proche', en: 'A relative’s home' },
 };
 
 // A locale is a control value, not data: whatever a screen read out of storage must be narrowed

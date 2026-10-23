@@ -50,8 +50,10 @@ interface ParentDashboardProps {
   alertPolicy: AlertPolicyConfig;
   pairingInfo: DevicePairing;
   lang: Language;
-  onSaveSafeZone: (zone: Omit<SafeZone, 'id' | 'createdAt'>) => void;
-  onDeleteSafeZone: (zoneId: string) => void;
+  // Only the legacy fallback (rendered when no `zonesPanel` is injected) uses these. App always
+  // injects ZonesScreen and passes neither, so the local save path is unreachable from the app (AC-2).
+  onSaveSafeZone?: (zone: Omit<SafeZone, 'id' | 'createdAt'>) => void;
+  onDeleteSafeZone?: (zoneId: string) => void;
   onUpdateAlertPolicy: (config: Partial<AlertPolicyConfig>) => void;
   onSyncNow: () => void;
   onTriggerSiren: () => void;
@@ -72,6 +74,10 @@ interface ParentDashboardProps {
   onOpenSettings?: () => void;
   activeTab?: 'map' | 'zones' | 'alerts' | 'health' | 'settings' | 'pairing';
   onTabChange?: (tab: 'map' | 'zones' | 'alerts' | 'health' | 'settings' | 'pairing') => void;
+  // Task 8 (AC-2): the server-backed zones screen, injected by App. When it is provided the zones
+  // tab shows ONLY that — the legacy localStorage-backed block below is the fallback for callers
+  // that pass nothing, never a second truth rendered beside it (no two sources of reality per screen).
+  zonesPanel?: React.ReactNode;
   pendingOfflineCount?: number;
   activeIncident?: ProtectionIncident | null;
   lastKnownLocation?: LastKnownLocation | null;
@@ -109,6 +115,7 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
   onOpenSettings,
   activeTab: externalActiveTab,
   onTabChange,
+  zonesPanel,
   pendingOfflineCount = 0,
   activeIncident = null,
   lastKnownLocation = null,
@@ -362,7 +369,7 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
           }`}
         >
           <MapPin className="w-4 h-4" />
-          {t.tabSafeZones} ({safeZones.length})
+          {t.tabSafeZones}{zonesPanel ? '' : ` (${safeZones.length})`}
         </button>
 
         <button
@@ -420,6 +427,9 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
             history={mapHistory}
             sourceConflict={sourceConflict}
             onSelectCoordinates={(lat, lng) => {
+              // With the server-backed panel the drawing lives on the zones tab (one map with
+              // drawing tools), so a map click goes there instead of opening the legacy form.
+              if (zonesPanel) { onTabChange?.('zones'); return; }
               setSelectedMapCoords({ lat, lng });
               setShowAddZoneModal(true);
             }}
@@ -427,7 +437,9 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
         </div>
       )}
 
-      {activeTab === 'zones' && (
+      {activeTab === 'zones' && zonesPanel}
+
+      {activeTab === 'zones' && !zonesPanel && (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 text-white space-y-4">
           <div className="flex items-center justify-between border-b border-slate-800 pb-4">
             <div>
@@ -482,7 +494,7 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
 
                 <div className="flex items-center justify-end border-t border-slate-700/60 pt-3">
                   <button
-                    onClick={() => onDeleteSafeZone(zone.id)}
+                    onClick={() => onDeleteSafeZone?.(zone.id)}
                     className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -575,7 +587,7 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
           currentLocation={location}
           selectedCoords={selectedMapCoords}
           onSave={(zone) => {
-            onSaveSafeZone(zone);
+            onSaveSafeZone?.(zone);
             setShowAddZoneModal(false);
           }}
           onClose={() => setShowAddZoneModal(false)}

@@ -80,17 +80,25 @@ console.log(`\n== cors == HTTP ${preflight.status} allow-origin=${preflight.head
 const labNotifications = await show('notifications', '/notifications', { fields: true });
 const labExitNotification = (labNotifications || []).find(
   (n) => n.type === 'geofenceExit' && n.description === 'lab-geofenceExit');
-if (labExitNotification && !String(labExitNotification.notificators || '').split(',').map((s) => s.trim()).includes('web')) {
+const notificatorsOf = (row) => String(row?.notificators || '').split(',').map((s) => s.trim()).filter(Boolean);
+if (!labExitNotification) {
+  // A missing subscription is its OWN answer — never folded into "no change": a zone with no alert
+  // subscription is a §4 lie, and the round-1 wording said "already present" for this case too.
+  console.log('== ensure-web-notificator == NOT FOUND: no geofenceExit subscription on the server');
+} else if (notificatorsOf(labExitNotification).includes('web')) {
+  console.log('== ensure-web-notificator == already present, no change');
+} else {
+  // UNION, never replace: round 1 wrote the literal 'mail,web', which would DROP any other value the
+  // operator had configured (sms/telegram). The existing tokens stay, `web` is appended.
+  const before = notificatorsOf(labExitNotification);
   // The update verb in this API is `PUT /{id}` (BaseObjectResource.java:101-103); a bare PUT on the
-  // collection is 405 (measured this round).
+  // collection is 405 (measured).
   const putResponse = await fetch(`${base}/notifications/${labExitNotification.id}`, {
     method: 'PUT',
     headers: { authorization: auth, 'content-type': 'application/json' },
-    body: JSON.stringify({ ...labExitNotification, notificators: 'mail,web' }), // round-tripped lab row; no secrets in it
+    body: JSON.stringify({ ...labExitNotification, notificators: [...before, 'web'].join(',') }), // round-tripped lab row; no secrets in it
   });
-  console.log(`== ensure-web-notificator == PUT /notifications/${labExitNotification.id} -> HTTP ${putResponse.status}`);
-} else {
-  console.log('== ensure-web-notificator == already present, no change');
+  console.log(`== ensure-web-notificator == PUT /notifications/${labExitNotification.id} -> HTTP ${putResponse.status} (${before.join(',') || 'empty'} + web)`);
 }
 
 // 8. mint the token BEFORE the identity probes (GET /session?token= needs it) and revoke at the end.
@@ -132,35 +140,49 @@ if (tokenResponse.ok && token.length > 20) {
   // school circle). Run that scenario in this window; a second scenario run inside the same window
   // is fine if the first has not reached the fence in time.
   const wsBase = (process.env.LAB_WS_URL || base.replace(/^http/, 'ws'));
-  const socket = new WebSocket(`${wsBase}/socket?token=${encodeURIComponent(token)}`);
   const shapes = new Set();
-  socket.addEventListener('open', () => console.log('== socket == OPEN'));
-  socket.addEventListener('message', (event) => {
-    let parsed = null;
-    try { parsed = JSON.parse(String(event.data)); shapes.add(keysOf(parsed)); }
-    catch { shapes.add(`non-json(${String(event.data).slice(0, 40)})`); }
-    // Task 10 renders the FIELDS inside an events element: once a real frame arrives, print the
-    // inner field names verbatim (names only — values may carry ids/timestamps and are not echoed).
-    // The type VALUE is a non-sensitive enum name (e.g. geofenceExit) and is printed to prove which
-    // event arrived.
-    if (parsed && Array.isArray(parsed.events) && parsed.events.length > 0) {
-      for (const frameEvent of parsed.events) {
-        const typeName = frameEvent && typeof frameEvent.type === 'string' ? frameEvent.type : 'unknown';
-        console.log(`== socket event frame == envelope=${keysOf(parsed)} type=${typeName} fields=${keysOf(frameEvent)}`);
+  let socket = null;
+  // Round-1 fix: an unexpected throw (`new WebSocket` can throw synchronously) skipped the revoke and
+  // left a one-hour token alive on the server. Everything now sits in try/finally so the revoke runs
+  // on every path — and no failure message is printed verbatim, because the socket URL carries the
+  // token and Node error messages can quote it.
+  try {
+    socket = new WebSocket(`${wsBase}/socket?token=${encodeURIComponent(token)}`);
+    socket.addEventListener('open', () => console.log('== socket == OPEN'));
+    socket.addEventListener('message', (event) => {
+      let parsed = null;
+      try { parsed = JSON.parse(String(event.data)); shapes.add(keysOf(parsed)); }
+      catch { shapes.add(`non-json(${String(event.data).slice(0, 40)})`); }
+      // Task 10 renders the FIELDS inside an events element: once a real frame arrives, print the
+      // inner field names verbatim (names only — values may carry ids/timestamps and are not echoed).
+      // The type VALUE is a non-sensitive enum name (e.g. geofenceExit) and is printed to prove which
+      // event arrived.
+      if (parsed && Array.isArray(parsed.events) && parsed.events.length > 0) {
+        for (const frameEvent of parsed.events) {
+          const typeName = frameEvent && typeof frameEvent.type === 'string' ? frameEvent.type : 'unknown';
+          console.log(`== socket event frame == envelope=${keysOf(parsed)} type=${typeName} fields=${keysOf(frameEvent)}`);
+        }
       }
+    });
+    socket.addEventListener('error', () => console.log('== socket == ERROR (message suppressed: the URL carries the token)'));
+    await new Promise((done) => setTimeout(done, 150000));
+  } catch {
+    console.log('== socket == FAILED before opening (message suppressed: the URL carries the token)');
+  } finally {
+    try { socket?.close(); } catch { /* already closed */ }
+    await new Promise((done) => setTimeout(done, 500));
+    console.log(`== socket frames == ${shapes.size === 0 ? 'NONE IN WINDOW (run the scenario while it is open)' : [...shapes].join(' | ')}`);
+    try {
+      const revoke = await fetch(`${base}/session/token/revoke`, {
+        method: 'POST',
+        headers: { authorization: auth, 'content-type': 'application/x-www-form-urlencoded' },
+        body: `token=${encodeURIComponent(token)}`,
+      });
+      console.log(`== token revoke == HTTP ${revoke.status}`); // the token must not outlive the probe
+    } catch {
+      console.log('== token revoke == FAILED');
     }
-  });
-  socket.addEventListener('error', (event) => console.log(`== socket == ERROR ${event.message}`));
-  await new Promise((done) => setTimeout(done, 150000));
-  socket.close();
-  await new Promise((done) => setTimeout(done, 500));
-  console.log(`== socket frames == ${shapes.size === 0 ? 'NONE IN WINDOW (run the scenario while it is open)' : [...shapes].join(' | ')}`);
-  const revoke = await fetch(`${base}/session/token/revoke`, {
-    method: 'POST',
-    headers: { authorization: auth, 'content-type': 'application/x-www-form-urlencoded' },
-    body: `token=${encodeURIComponent(token)}`,
-  });
-  console.log(`== token revoke == HTTP ${revoke.status}`); // the token must not outlive the probe
+  }
 } else {
   console.log('== socket == SKIPPED, no token issued (record NOT RUN, do not guess the frame shape)');
 }

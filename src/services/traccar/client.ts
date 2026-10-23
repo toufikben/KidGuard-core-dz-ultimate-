@@ -19,11 +19,13 @@ const kindFor = (status: number): ErrorKind =>
 export function createTraccarClient({
   baseUrl, credentials, timeoutMs = 10000,
 }: { baseUrl: string; credentials: Credentials; timeoutMs?: number }) {
-  // Query keys are sorted so a test can assert the exact string and a cache sees one shape.
+  // Key order is the CALLER's and is never rewritten. Measured on the live 6.16.0 lab (2026-10-23):
+  // GET /permissions resolves the relation from the pair's FIRST key — `?userId=2&notificationId=0`
+  // answers 200 while the alphabetically sorted `?notificationId=0&userId=2` answers 400 ("Table
+  // TC_NOTIFICATION_USER not found"). A helper that sorts would flip a working read into a broken one.
   const withQuery = (path: string, params?: Record<string, string | number>) => {
     if (!params || Object.keys(params).length === 0) return path;
     const search = Object.entries(params)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
       .join('&');
     return `${path}?${search}`;
