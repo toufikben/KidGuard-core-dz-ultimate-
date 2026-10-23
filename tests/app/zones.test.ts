@@ -479,6 +479,8 @@ test('bufferFromAttributes (fix): a stored polylineDistance survives the edit ro
   assert.equal(bufferFromAttributes({ polylineDistance: 0 }), 0, 'a stored 0 is shown as 0 so save refuses it — never silently replaced');
   assert.equal(bufferFromAttributes({ polylineDistance: -5 }, 160), 160, 'a negative width is unusable; fall back');
   assert.equal(bufferFromAttributes({ polylineDistance: 'nope' }, 180), 180);
+  assert.equal(bufferFromAttributes({ polylineDistance: '' }, 190), 190, 'a blank string is missing, not zero metres');
+  assert.equal(bufferFromAttributes({ polylineDistance: '   ' }, 195), 195, 'whitespace-only is still missing');
   assert.equal(bufferFromAttributes(undefined, 175), 175);
   assert.equal(bufferFromAttributes({}, 150), 150);
 });
@@ -500,10 +502,11 @@ test('ZonesScreen (fresh map): create, update and delete all publish the RE-READ
   assert.match(src, /onServerZones\?\.\(list\)/, 'the optional callback carries the server list to the dashboard map');
 });
 
-// ── fix-round: the circle tool draws with a real drag (brief «زر دائرة بالسحب») ──────────────────────
-// The gesture itself is browser work and stays NOT RUN until a measured run names it (R-M1-19); these
-// guards pin the wiring a browser run would exercise, so a refactor cannot quietly delete it.
-test('ZonesScreen (circle by drag): the tool is armed only for an admin and the drag becomes the draft', () => {
+// ── fix-round 2: the circle tool draws with a real drag (review 2) ───────────────────────────────
+// The state machine is proven BEHAVIOURALLY in tests/app/circleDrag.test.ts. What follows is a WIRING
+// GUARD — source-level assertions that the browser-bound half (Pointer Events, capture, click
+// suppression) is still connected to it. The gesture itself stays NOT RUN until a measured run (R-M1-19).
+test('ZonesScreen (circle by drag) — WIRING GUARD: the tool is armed only for an admin and the drag becomes the draft', () => {
   const src = zonesScreen();
   assert.match(src, /drawCircle=\{mode === 'circle' && isAdmin\}/, 'only an admin gets the drawing tool, only on the circle tab');
   assert.match(src, /onCircleDrawn=\{handleCircleDrawn\}/, 'the map reports the drawn circle back to the screen');
@@ -511,15 +514,18 @@ test('ZonesScreen (circle by drag): the tool is armed only for an admin and the 
   assert.match(src, /if \(!isAdmin\) return;/, 'a non-admin cannot arm a draft through the map callback');
 });
 
-test('MapView (circle by drag): drags draw, pans are off while armed, and a tap is not a drag', () => {
+test('MapView (circle by drag) — WIRING GUARD: Pointer Events, capture and click suppression', () => {
   const src = readFileSync(new URL('../../src/components/MapView.tsx', import.meta.url), 'utf8');
-  for (const handler of ['mousedown', 'mousemove', 'mouseup', 'touchstart', 'touchmove', 'touchend']) {
-    assert.ok(src.includes(`map.on('${handler}'`), `MapView must bind ${handler} for the drag gesture`);
+  for (const handler of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
+    assert.ok(src.includes(`container.addEventListener('${handler}', `),
+      `MapView must listen for ${handler} on the map container itself — Leaflet's Map events never carried DOM touches`);
   }
+  assert.match(src, /setPointerCapture\(event\.pointerId\)/, 'capture keeps a release outside the map in the same drag');
+  assert.match(src, /container\.style\.touchAction = 'none'/, 'touch must not scroll the page mid-draw');
+  assert.match(src, /circleDragRef\.current\?\.consumeClickSuppression\(\)\) return;[\s\S]{0,220}selectCallbackRef\.current\?\./,
+    'the click after a drag is consumed BEFORE it can overwrite the drawn centre');
+  assert.match(src, /createCircleDrag\(\)/, 'the pure state machine makes the draw-vs-tap decision');
   assert.match(src, /previewCircleRef\.current = L\.circle\(/, 'the drag draws a dashed preview that never becomes a saved zone');
-  assert.match(src, /draggedPx >= 6 && radius >= 10/, 'a tap or a jitter is not a circle; a real drag is');
-  assert.match(src, /circleCallbackRef\.current\?\.\(\{ lat: center\.lat, lon: center\.lng \}, Math\.round\(radius\)\)/,
-    'only a completed drag reports a centre + rounded radius');
   assert.match(src, /map\.dragging\.disable\(\)/, 'while armed a drag draws, it does not pan the map');
   assert.match(src, /map\.dragging\.enable\(\)/, 'unarming restores panning');
   assert.match(src, /\[drawCircle, mapReady\]/, 'the effect re-runs once the map exists — the tool may be armed on first render');

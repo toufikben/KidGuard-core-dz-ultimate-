@@ -10,11 +10,11 @@
 // no hard-coded RTL — every sentence is a catalog key plus the caller's `lang`, exactly like MapView.
 // The literals that remain are language-neutral by construction (ids, the em-dash for an absent value).
 //
-// The drawing tools are the three the brief names — circle (drag), polygon (click), route (consecutive
-// points). The SAVE path is what Task 8 measures (the live AC-2 run + probe line); the drawing GESTURE
-// itself is NOT RUN here (R-M1-19), so the circle is offered as a click-to-place centre plus a radius
-// control rather than a pixel-drag, and polygon/route accumulate real map clicks through MapView's
-// existing coordinate callback.
+// The drawing tools are the three the brief names — circle (a pixel drag on the map), polygon
+// (consecutive clicks) and route (consecutive points). The SAVE path is what Task 8 measures (the live
+// AC-2 run + probe line); the drawing GESTURE itself is browser work and stays NOT RUN until a measured
+// run names it (R-M1-19). A tap still sets a circle's centre alone, so no pointing-device drag is
+// required to choose a radius; polygon/route accumulate real map clicks through MapView's callback.
 import React, { useEffect, useMemo, useState } from 'react';
 import { Circle, Pentagon, Route, Plus, Trash2, UserCog, X } from 'lucide-react';
 import { MapView, type MapZone } from './MapView';

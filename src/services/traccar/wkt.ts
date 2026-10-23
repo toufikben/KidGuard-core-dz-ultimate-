@@ -63,8 +63,8 @@ function parsePoints(body: string): LatLng[] {
 }
 
 // A refusal is a CODE plus the numbers the sentence needs, never a baked Arabic sentence: the screen
-// resolves it through the catalog in the guardian's own language (R-M1-18). The codes are the four
-// branches below and nothing else; tests/app/wkt.test.ts pins each one.
+// resolves it through the catalog in the guardian's own language (R-M1-18). The five codes below are
+// the whole vocabulary; tests/app/wkt.test.ts pins each one, and zonesMessage.ts localises each one.
 export type ZoneViolation =
   | { code: 'radiusMin'; need: number }
   | { code: 'polygonMinPoints' }

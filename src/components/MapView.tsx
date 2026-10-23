@@ -25,6 +25,7 @@ import {
   scaleForZoom,
   zoomForRing,
 } from './map/childIcon';
+import { createCircleDrag, type DragPoint } from './map/circleDrag';
 
 export type MapZone = { id: string; name: string; geometry: Geometry };
 
@@ -105,6 +106,8 @@ export const MapView: React.FC<MapViewProps> = ({
   const selectCallbackRef = useRef<MapViewProps['onSelectCoordinates']>(onSelectCoordinates);
   const circleCallbackRef = useRef<MapViewProps['onCircleDrawn']>(onCircleDrawn);
   const previewCircleRef = useRef<L.Circle | null>(null);
+  const circleDragRef = useRef<ReturnType<typeof createCircleDrag> | null>(null);
+  if (!circleDragRef.current) circleDragRef.current = createCircleDrag();
 
   const [isAutoFollow, setIsAutoFollow] = useState<boolean>(false);
   const [isLegendOpen, setIsLegendOpen] = useState<boolean>(false);
@@ -128,8 +131,10 @@ export const MapView: React.FC<MapViewProps> = ({
 
   // The circle-drag tool. Panning is off while it is armed (a drag IS the drawing, not a pan); the
   // dashed preview is a local layer that never becomes a zone — only a completed drag calls back, and
-  // the guardian still has to press Save. A release under 6 px is a tap: the map's own click handler
-  // places the centre at the typed radius, so the tool works without a drag (accessibility).
+  // the guardian still has to press Save. The gesture is a Pointer Events stream on the map container:
+  // Leaflet's Map event system does not forward DOM touch events (map.on('touchstart', …) never fired,
+  // review 2), and pointer capture keeps delivering moves after the finger leaves the map. A release
+  // under 6 px is a tap: the map's own click handler places the centre at the typed radius.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -138,8 +143,12 @@ export const MapView: React.FC<MapViewProps> = ({
       return;
     }
     map.dragging.disable();
-    let start: L.LatLng | null = null;
-    let last: L.LatLng | null = null;
+    const container = map.getContainer();
+    const drag = circleDragRef.current!;
+    const previousTouchAction = container.style.touchAction;
+    // Without this the browser claims the touch for scrolling and cancels our pointer stream.
+    container.style.touchAction = 'none';
+    let activePointer: number | null = null;
 
     const clearPreview = () => {
       if (previewCircleRef.current) {
@@ -147,57 +156,89 @@ export const MapView: React.FC<MapViewProps> = ({
         previewCircleRef.current = null;
       }
     };
-    const latLngOf = (event: L.LeafletEvent): L.LatLng | null => {
-      const candidate = event as unknown as { latlng?: L.LatLng };
-      return candidate.latlng ?? null;
+    const pointOf = (event: PointerEvent): DragPoint | null => {
+      const latlng = map.mouseEventToLatLng(event);
+      const px = map.mouseEventToContainerPoint(event);
+      if (!Number.isFinite(latlng.lat) || !Number.isFinite(latlng.lng)) return null;
+      return { lat: latlng.lat, lon: latlng.lng, x: px.x, y: px.y };
     };
-    const begin = (event: L.LeafletEvent) => {
-      if (start) return;
-      const point = latLngOf(event);
-      if (!point) return;
-      start = point;
-      last = point;
-      clearPreview();
-      previewCircleRef.current = L.circle(point, {
-        radius: 1, color: '#10b981', weight: 2, dashArray: '6 6', fillOpacity: 0.08,
-      }).addTo(map);
-    };
-    const move = (event: L.LeafletEvent) => {
-      if (!start) return;
-      const point = latLngOf(event);
-      if (!point) return;
-      last = point;
-      const radius = haversineMeters(start.lat, start.lng, point.lat, point.lng);
-      previewCircleRef.current?.setRadius(Math.max(radius, 1));
-    };
-    const finish = (event: L.LeafletEvent) => {
-      if (!start) return;
-      const center = start;
-      const end = latLngOf(event) ?? last;
-      const startPx = map.latLngToContainerPoint(center);
-      const draggedPx = end ? startPx.distanceTo(map.latLngToContainerPoint(end)) : 0;
-      const radius = end ? haversineMeters(center.lat, center.lng, end.lat, end.lng) : 0;
-      start = null;
-      last = null;
-      clearPreview();
-      if (draggedPx >= 6 && radius >= 10) {
-        circleCallbackRef.current?.({ lat: center.lat, lon: center.lng }, Math.round(radius));
+    const releasePointer = (event: PointerEvent) => {
+      try {
+        if (container.hasPointerCapture(event.pointerId)) container.releasePointerCapture(event.pointerId);
+      } catch {
+        // Capture may already be gone (pointercancel / synthetic event); nothing to release.
       }
     };
 
-    map.on('mousedown', begin);
-    map.on('mousemove', move);
-    map.on('mouseup', finish);
-    map.on('touchstart', begin);
-    map.on('touchmove', move);
-    map.on('touchend', finish);
+    const begin = (event: PointerEvent) => {
+      if (activePointer !== null) return;
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      // Leaflet's zoom and attribution controls live inside the container; they keep their clicks.
+      if (event.target instanceof Element && event.target.closest('.leaflet-control-container')) return;
+      const point = pointOf(event);
+      if (!point || !drag.begin(point)) return;
+      activePointer = event.pointerId;
+      try {
+        container.setPointerCapture(event.pointerId);
+      } catch {
+        // No capture support (jsdom / older engine): moves that leave the map are simply lost.
+      }
+      event.preventDefault();
+      clearPreview();
+      previewCircleRef.current = L.circle([point.lat, point.lon], {
+        radius: 1, color: '#10b981', weight: 2, dashArray: '6 6', fillOpacity: 0.08,
+      }).addTo(map);
+    };
+    const move = (event: PointerEvent) => {
+      if (activePointer !== event.pointerId) return;
+      const point = pointOf(event);
+      const preview = point ? drag.move(point) : null;
+      if (!preview) return;
+      previewCircleRef.current?.setRadius(Math.max(preview.radiusMeters, 1));
+      event.preventDefault();
+    };
+    const finish = (event: PointerEvent) => {
+      if (activePointer !== event.pointerId) return;
+      const outcome = drag.finish(pointOf(event) ?? undefined);
+      activePointer = null;
+      releasePointer(event);
+      clearPreview();
+      if (outcome?.drawn && outcome.center) {
+        circleCallbackRef.current?.(
+          { lat: outcome.center.lat, lon: outcome.center.lon },
+          Math.round(outcome.radiusMeters),
+        );
+      }
+    };
+    const cancel = (event: PointerEvent) => {
+      if (activePointer !== event.pointerId) return;
+      drag.cancel();
+      activePointer = null;
+      releasePointer(event);
+      clearPreview();
+    };
+    const lostCapture = (event: PointerEvent) => {
+      // Capture lost without a release (the browser took the gesture): end it without drawing.
+      if (activePointer !== event.pointerId) return;
+      drag.cancel();
+      activePointer = null;
+      clearPreview();
+    };
+
+    container.addEventListener('pointerdown', begin);
+    container.addEventListener('pointermove', move);
+    container.addEventListener('pointerup', finish);
+    container.addEventListener('pointercancel', cancel);
+    container.addEventListener('lostpointercapture', lostCapture);
     return () => {
-      map.off('mousedown', begin);
-      map.off('mousemove', move);
-      map.off('mouseup', finish);
-      map.off('touchstart', begin);
-      map.off('touchmove', move);
-      map.off('touchend', finish);
+      container.removeEventListener('pointerdown', begin);
+      container.removeEventListener('pointermove', move);
+      container.removeEventListener('pointerup', finish);
+      container.removeEventListener('pointercancel', cancel);
+      container.removeEventListener('lostpointercapture', lostCapture);
+      container.style.touchAction = previousTouchAction;
+      drag.reset();
+      activePointer = null;
       clearPreview();
       map.dragging.enable();
     };
@@ -213,6 +254,10 @@ export const MapView: React.FC<MapViewProps> = ({
     }).addTo(map);
 
     map.on('click', (e: L.LeafletMouseEvent) => {
+      // A drag release also produces a click at the RELEASE point. While panning is disabled Leaflet
+      // does not suppress it, so consuming it here is what keeps the drawn circle centred on its start
+      // instead of its rim (review 2, Critical). Once per drag; a later tap selects normally.
+      if (circleDragRef.current?.consumeClickSuppression()) return;
       const clicked = childFixLatLng(e?.latlng?.lat, e?.latlng?.lng);
       if (clicked) selectCallbackRef.current?.(clicked[0], clicked[1]);
     });
