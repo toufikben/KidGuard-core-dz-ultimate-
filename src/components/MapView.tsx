@@ -230,12 +230,18 @@ export const MapView: React.FC<MapViewProps> = ({
     container.addEventListener('pointerup', finish);
     container.addEventListener('pointercancel', cancel);
     container.addEventListener('lostpointercapture', lostCapture);
+    // A release outside the container must end the gesture even where capture is unavailable (or
+    // throws). When the container sees the event first these are no-ops: activePointer is already null.
+    document.addEventListener('pointerup', finish);
+    document.addEventListener('pointercancel', cancel);
     return () => {
       container.removeEventListener('pointerdown', begin);
       container.removeEventListener('pointermove', move);
       container.removeEventListener('pointerup', finish);
       container.removeEventListener('pointercancel', cancel);
       container.removeEventListener('lostpointercapture', lostCapture);
+      document.removeEventListener('pointerup', finish);
+      document.removeEventListener('pointercancel', cancel);
       container.style.touchAction = previousTouchAction;
       drag.reset();
       activePointer = null;

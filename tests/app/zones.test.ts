@@ -521,6 +521,18 @@ test('MapView (circle by drag) — WIRING GUARD: Pointer Events, capture and cli
       `MapView must listen for ${handler} on the map container itself — Leaflet's Map events never carried DOM touches`);
   }
   assert.match(src, /setPointerCapture\(event\.pointerId\)/, 'capture keeps a release outside the map in the same drag');
+  assert.ok(src.includes("container.addEventListener('lostpointercapture', "),
+    'if capture is lost mid-drag the gesture must end, not hang');
+  // Capture can throw where the API is unavailable; without a document-level release the drag would
+  // stay active forever and the next tap would be rejected as "already dragging".
+  assert.ok(src.includes("document.addEventListener('pointerup', finish)"),
+    'a release outside the container must finish the drag even without capture');
+  assert.ok(src.includes("document.removeEventListener('pointerup', finish)"),
+    'the document-level fallback must be removed when the tool is unarmed');
+  assert.match(src, /closest\('\.leaflet-control-container'\)/,
+    'starting a drag on a zoom button must not draw a circle');
+  assert.match(src, /pointerType === 'mouse'[\s\S]{0,80}button !== 0/,
+    'a right-click must not start a draw');
   assert.match(src, /container\.style\.touchAction = 'none'/, 'touch must not scroll the page mid-draw');
   assert.match(src, /circleDragRef\.current\?\.consumeClickSuppression\(\)\) return;[\s\S]{0,220}selectCallbackRef\.current\?\./,
     'the click after a drag is consumed BEFORE it can overwrite the drawn centre');
