@@ -6,7 +6,6 @@ import {
   Bell,
   Activity,
   Smartphone,
-  Plus,
   Volume2,
   VolumeX,
   Mic,
@@ -15,7 +14,6 @@ import {
   ExternalLink,
   BatteryCharging,
   Clock,
-  Trash2,
 } from 'lucide-react';
 import {
   AlertPolicyConfig,
@@ -25,7 +23,6 @@ import {
   LocationPoint,
   LoggedAlert,
   RiskAssessment,
-  SafeZone,
   ProtectionIncident,
   LastKnownLocation,
   CheckInRequest,
@@ -35,7 +32,6 @@ import { type Freshness } from '../services/traccar/positions.ts';
 import type { ServerPosition } from '../services/traccar/types.ts';
 import type { LatLng } from '../services/traccar/wkt.ts';
 import { MapView, type MapZone } from './MapView';
-import { SafeZoneForm } from './SafeZoneForm';
 import { AlertPolicySettings } from './AlertPolicySettings';
 import { HealthDiagnosticsModal } from './HealthDiagnosticsModal';
 import { PairingModal } from './PairingModal';
@@ -44,16 +40,14 @@ import { ResponseCenter } from './ResponseCenter';
 interface ParentDashboardProps {
   location: LocationPoint;
   riskAssessment: RiskAssessment;
-  safeZones: SafeZone[];
   alertHistory: LoggedAlert[];
   healthStatus: HealthStatus;
   alertPolicy: AlertPolicyConfig;
   pairingInfo: DevicePairing;
   lang: Language;
-  // Only the legacy fallback (rendered when no `zonesPanel` is injected) uses these. App always
-  // injects ZonesScreen and passes neither, so the local save path is unreachable from the app (AC-2).
-  onSaveSafeZone?: (zone: Omit<SafeZone, 'id' | 'createdAt'>) => void;
-  onDeleteSafeZone?: (zoneId: string) => void;
+  // The zones tab IS this panel — required, not an optional fallback: the legacy local form and its
+  // localStorage record are gone (AC-2), so there is exactly one zone surface in the app.
+  zonesPanel: React.ReactNode;
   onUpdateAlertPolicy: (config: Partial<AlertPolicyConfig>) => void;
   onSyncNow: () => void;
   onTriggerSiren: () => void;
@@ -74,10 +68,6 @@ interface ParentDashboardProps {
   onOpenSettings?: () => void;
   activeTab?: 'map' | 'zones' | 'alerts' | 'health' | 'settings' | 'pairing';
   onTabChange?: (tab: 'map' | 'zones' | 'alerts' | 'health' | 'settings' | 'pairing') => void;
-  // Task 8 (AC-2): the server-backed zones screen, injected by App. When it is provided the zones
-  // tab shows ONLY that — the legacy localStorage-backed block below is the fallback for callers
-  // that pass nothing, never a second truth rendered beside it (no two sources of reality per screen).
-  zonesPanel?: React.ReactNode;
   pendingOfflineCount?: number;
   activeIncident?: ProtectionIncident | null;
   lastKnownLocation?: LastKnownLocation | null;
@@ -88,14 +78,11 @@ interface ParentDashboardProps {
 export const ParentDashboard: React.FC<ParentDashboardProps> = ({
   location,
   riskAssessment,
-  safeZones,
   alertHistory,
   healthStatus,
   alertPolicy,
   pairingInfo,
   lang,
-  onSaveSafeZone,
-  onDeleteSafeZone,
   onUpdateAlertPolicy,
   onSyncNow,
   onTriggerSiren,
@@ -135,11 +122,6 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
       onTabChange(tab);
     }
   };
-
-  const [showAddZoneModal, setShowAddZoneModal] = useState(false);
-  const [selectedMapCoords, setSelectedMapCoords] = useState<{ lat: number; lng: number } | null>(
-    null
-  );
 
   const getRiskColor = (level: string) => {
     switch (level) {
@@ -369,7 +351,7 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
           }`}
         >
           <MapPin className="w-4 h-4" />
-          {t.tabSafeZones}{zonesPanel ? '' : ` (${safeZones.length})`}
+          {t.tabSafeZones}
         </button>
 
         <button
@@ -426,86 +408,16 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
             zones={mapZones}
             history={mapHistory}
             sourceConflict={sourceConflict}
-            onSelectCoordinates={(lat, lng) => {
-              // With the server-backed panel the drawing lives on the zones tab (one map with
-              // drawing tools), so a map click goes there instead of opening the legacy form.
-              if (zonesPanel) { onTabChange?.('zones'); return; }
-              setSelectedMapCoords({ lat, lng });
-              setShowAddZoneModal(true);
+            onSelectCoordinates={() => {
+              // Drawing lives on the zones tab (one map with drawing tools); the old here-be-dragons
+              // path that opened a local form with fabricated default coordinates is gone.
+              onTabChange?.('zones');
             }}
           />
         </div>
       )}
 
       {activeTab === 'zones' && zonesPanel}
-
-      {activeTab === 'zones' && !zonesPanel && (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 text-white space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-            <div>
-              <h2 className="text-lg font-bold">{t.tabSafeZones}</h2>
-              <p className="text-xs text-slate-400">
-                إدارة المناطق الجغرافية الآمنة المسجلة لحماية الطفل
-              </p>
-            </div>
-            <button
-              onClick={() => {
-                setSelectedMapCoords(null);
-                setShowAddZoneModal(true);
-              }}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-emerald-600/20"
-            >
-              <Plus className="w-4 h-4" />
-              {t.addSafeZone}
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {safeZones.map((zone) => (
-              <div
-                key={zone.id}
-                className="bg-slate-800/80 border border-slate-700/80 p-4 rounded-2xl flex flex-col justify-between gap-3"
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-bold text-sm text-emerald-400">{zone.name}</h3>
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        zone.active
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                          : 'bg-slate-700 text-slate-400'
-                      }`}
-                    >
-                      {zone.active ? t.active : t.inactive}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-300 mt-2">
-                    نصف القطر:{' '}
-                    <strong className="text-white">
-                      {zone.radius >= 1000
-                        ? `${zone.radius} متر (${(zone.radius / 1000).toFixed(1)} كم)`
-                        : `${zone.radius} متر`}
-                    </strong>
-                  </p>
-                  <p className="text-[11px] font-mono text-slate-400 mt-1">
-                    {typeof zone.latitude === 'number' && !isNaN(zone.latitude) ? zone.latitude.toFixed(5) : '36.75380'}, {typeof zone.longitude === 'number' && !isNaN(zone.longitude) ? zone.longitude.toFixed(5) : '3.05880'}
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-end border-t border-slate-700/60 pt-3">
-                  <button
-                    onClick={() => onDeleteSafeZone?.(zone.id)}
-                    className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    {t.deleteZone}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {activeTab === 'alerts' && (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 text-white space-y-4">
@@ -581,19 +493,6 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
         />
       )}
 
-      {/* Add Safe Zone Modal */}
-      {showAddZoneModal && (
-        <SafeZoneForm
-          currentLocation={location}
-          selectedCoords={selectedMapCoords}
-          onSave={(zone) => {
-            onSaveSafeZone?.(zone);
-            setShowAddZoneModal(false);
-          }}
-          onClose={() => setShowAddZoneModal(false)}
-          lang={lang}
-        />
-      )}
     </div>
   );
 };

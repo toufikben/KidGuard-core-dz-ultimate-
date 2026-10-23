@@ -62,23 +62,33 @@ function parsePoints(body: string): LatLng[] {
   });
 }
 
-export function validateZone({ type, geometry }: { type: ZoneType; geometry: Geometry }): string[] {
-  const errors: string[] = [];
+// A refusal is a CODE plus the numbers the sentence needs, never a baked Arabic sentence: the screen
+// resolves it through the catalog in the guardian's own language (R-M1-18). The codes are the four
+// branches below and nothing else; tests/app/wkt.test.ts pins each one.
+export type ZoneViolation =
+  | { code: 'radiusMin'; need: number }
+  | { code: 'polygonMinPoints' }
+  | { code: 'routeMinPoints' }
+  | { code: 'bufferMissing' }
+  | { code: 'bufferMin'; need: number };
+
+export function validateZone({ type, geometry }: { type: ZoneType; geometry: Geometry }): ZoneViolation[] {
+  const violations: ZoneViolation[] = [];
   const need = MIN_EDGE[type] ?? DEFAULT_EDGE;
   if (geometry.kind === 'circle') {
-    if (geometry.radiusMeters < need) {
-      errors.push(`منطقة ${type} يجب أن يكون نصف قطرها ≥ ${need} م (المواصفة §6: الدوائر الصغيرة تُنتج حواف زائفة)`);
-    }
+    if (geometry.radiusMeters < need) violations.push({ code: 'radiusMin', need });
   } else if (geometry.kind === 'polygon') {
     // GeofencePolygon.java:146 rejects fewer than 3 comma-tokens server-side; we say why first.
-    if (geometry.points.length < 3) errors.push('المضلّع يحتاج 3 نقاط على الأقل');
+    if (geometry.points.length < 3) violations.push({ code: 'polygonMinPoints' });
   } else {
-    if (geometry.points.length < 2) errors.push('خط المسار يحتاج نقطتين على الأقل');
+    if (geometry.points.length < 2) violations.push({ code: 'routeMinPoints' });
     if (geometry.bufferMeters === undefined || geometry.bufferMeters === 0) {
-      errors.push('منطقة مسار بلا polylineDistance: الخادم سيتخذ 25 م افتراضاً (Geofence.java:86) — حدّد الهامش صراحةً');
+      // Distinct from "too small": 0 is honoured by the server (measured R-M1-13), so this corridor
+      // would never contain the child. Omitting it falls back to 25 m — also not a choice we make.
+      violations.push({ code: 'bufferMissing' });
     } else if (geometry.bufferMeters < (type === 'route' ? 100 : need)) {
-      errors.push(`هامش المسار يجب أن يكون ≥ ${type === 'route' ? 100 : need} م`);
+      violations.push({ code: 'bufferMin', need: type === 'route' ? 100 : need });
     }
   }
-  return errors;
+  return violations;
 }

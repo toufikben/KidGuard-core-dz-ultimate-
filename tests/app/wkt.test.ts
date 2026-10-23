@@ -49,50 +49,61 @@ test('an unknown geometry type is a named error, not an empty zone', () => {
   assert.throws(() => parseWkt('MULTIPOLYGON (((36.75 3.05)))'), /unknown|unsupported/i);
 });
 
+// Validation answers structured codes, not English/Arabic prose: the screen localises them via
+// `zones.error.*` in the active `lang` (R-M1-14). Pinning `deepEqual` here means a mutation that
+// swaps the reason (radiusMin reported as bufferMin) reddens the exact branch that changed.
 test('a school circle smaller than the 50 m edge is refused with the reason', () => {
   const errors = validateZone({ type: 'school', geometry: { kind: 'circle', lat: 36.7538, lon: 3.0588, radiusMeters: 25 } });
-  assert.equal(errors.length, 1, errors.join('\n'));
-  assert.match(errors[0], /≥\s*50|>=\s*50/, errors[0]);
+  assert.deepEqual(errors, [{ code: 'radiusMin', need: 50 }]);
 });
 
 test('route zones need 100 m of edge, not the school default', () => {
   const errors = validateZone({ type: 'route', geometry: { kind: 'linestring', points: [{ lat: 36.7538, lon: 3.0588 }, { lat: 36.7545, lon: 3.0595 }], bufferMeters: 60 } });
-  assert.ok(errors.some((e) => /100/.test(e)), errors.join('\n'));
+  assert.deepEqual(errors, [{ code: 'bufferMin', need: 100 }]);
 });
 
 test('a route zone with no declared buffer is refused, not silently given the server 25 m default', () => {
   const errors = validateZone({ type: 'route', geometry: { kind: 'linestring', points: [{ lat: 36.7538, lon: 3.0588 }, { lat: 36.7545, lon: 3.0595 }] } });
-  assert.ok(errors.some((e) => /polylineDistance|هامش/.test(e)), errors.join('\n'));
+  assert.deepEqual(errors, [{ code: 'bufferMissing' }]);
 });
 
 // `bufferMeters: 0` is a DIFFERENT bug from omitting it: 0 is a real value the server honours, so a
 // zero-width corridor never contains the child and no geofenceExit ever fires (AC-1 would silently
-// never trigger). `undefined` above and `0` here are separate branches of wkt.ts:77, so each needs
-// its own test. The assertion names the REASON (`polylineDistance`), not the word «هامش», which also
-// appears in the "too small" message: a loose regex let a mutation that deletes the `=== 0` clause
-// pass green — the zone is then reported as merely under 100 m, which is the wrong diagnosis.
+// never trigger). `undefined` above and `0` here are separate branches of validateZone, so each
+// needs its own test. The codes differ (`bufferMissing` vs `bufferMin`): a mutation that deletes the
+// `=== 0` clause must fall through to the "merely too small" diagnosis and fail this assertion.
 test('an explicit zero-width route buffer is refused as unusable, not as merely too small', () => {
   const errors = validateZone({
     type: 'route',
     geometry: { kind: 'linestring', points: [{ lat: 36.7538, lon: 3.0588 }, { lat: 36.7545, lon: 3.0595 }], bufferMeters: 0 },
   });
-  assert.ok(errors.some((e) => /polylineDistance/.test(e)), errors.join('\n'));
-  assert.ok(!errors.some((e) => /≥\s*100/.test(e)), `wrong diagnosis: ${errors.join('\n')}`);
+  assert.deepEqual(errors, [{ code: 'bufferMissing' }], 'a zero corridor is refused as missing, not as under 100 m');
 });
 
 // Task 8's hand-off: the ONLY safe order is validate-then-emit, because `toRouteWkt` answers a
 // missing buffer with `polylineDistance: 0` (wkt.ts:32) rather than refusing. This test pins that
 // the geometry the emitter would accept-with-0 is the same geometry the validator rejects for that
-// named reason, so a zone editor that forgets validateZone cannot reach the server with a corridor
+// named code, so a zone editor that forgets validateZone cannot reach the server with a corridor
 // nobody exits.
 test('what the emitter writes as 0 is what the validator rejects (the Task 8 guard is real)', () => {
   const points = [{ lat: 36.7538, lon: 3.0588 }, { lat: 36.7545, lon: 3.0595 }];
   assert.equal(toRouteWkt({ points }).attributes.polylineDistance, 0);
   const errors = validateZone({ type: 'route', geometry: { kind: 'linestring', points } });
-  assert.ok(errors.some((e) => /polylineDistance/.test(e)), errors.join('\n'));
+  assert.deepEqual(errors, [{ code: 'bufferMissing' }]);
 });
 
 test('a two-point polygon is refused by us before the server refuses it (GeofencePolygon.java:146)', () => {
   const errors = validateZone({ type: 'park', geometry: { kind: 'polygon', points: [{ lat: 36.75, lon: 3.05 }, { lat: 36.76, lon: 3.06 }] } });
-  assert.ok(errors.some((e) => /3/.test(e)), errors.join('\n'));
+  assert.deepEqual(errors, [{ code: 'polygonMinPoints' }]);
+});
+
+// A one-point route is refused for both reasons it cannot work: the line itself is degenerate and
+// no corridor width was declared. Pinning both codes proves the validator reports every reason
+// instead of stopping at the first.
+test('a one-point route reports the degenerate line and the missing buffer together', () => {
+  const errors = validateZone({
+    type: 'route',
+    geometry: { kind: 'linestring', points: [{ lat: 36.7538, lon: 3.0588 }] },
+  });
+  assert.deepEqual(errors, [{ code: 'routeMinPoints' }, { code: 'bufferMissing' }]);
 });

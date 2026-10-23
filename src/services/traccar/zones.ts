@@ -17,7 +17,10 @@
 //    with no id is a measured 405.
 import { TraccarError, type TraccarClient } from './client.ts';
 import { whoAmI } from './session.ts';
-import { validateZone, toCircleWkt, toPolygonWkt, toRouteWkt, type Geometry, type ZoneType } from './wkt.ts';
+import {
+  validateZone, toCircleWkt, toPolygonWkt, toRouteWkt,
+  type Geometry, type ZoneType, type ZoneViolation,
+} from './wkt.ts';
 import type { ServerGeofence } from './types.ts';
 import { translate } from '../../translations/catalog.ts';
 import { createPermissionService, notAdministrator, type PermissionService } from './permissions.ts';
@@ -42,12 +45,14 @@ export type GeofencePayload = { name: string; area: string; attributes?: Record<
 
 // A zone the geometry rule refused (§6: a tiny school circle or a zero-width route buffer). It throws
 // BEFORE any request, so the server is never asked to store a shape that would only emit false edges.
+// The violations are CODES: this class is thrown where no `lang` exists, so the screen localizes them
+// through zonesMessage.ts instead of printing a sentence this module cannot translate (R-M1-18).
 export class ZoneValidationError extends Error {
-  readonly errors: string[];
-  constructor(errors: string[]) {
-    super(errors.join(' — '));
+  readonly violations: ZoneViolation[];
+  constructor(violations: ZoneViolation[]) {
+    super(`zone rejected: ${violations.map((v) => v.code).join(', ')}`);
     this.name = 'ZoneValidationError';
-    this.errors = errors;
+    this.violations = violations;
   }
 }
 

@@ -27,6 +27,7 @@ import {
 import { TraccarError } from '../services/traccar/client.ts';
 import type { ServerGeofence } from '../services/traccar/types.ts';
 import { zoneErrorMessage } from './zonesMessage.ts';
+import { bufferFromAttributes } from './zoneAttributes.ts';
 
 type DrawMode = 'circle' | 'polygon' | 'route';
 
@@ -62,10 +63,14 @@ export type ZonesScreenProps = {
   isAdmin: boolean;
   childName: string;
   // The child device the zone is evaluated against and the guardians who must receive the exit alert.
-  // Task 9 supplies the device id; until then a zone saves without a device link (the alert
-  // subscription still runs, R-M1-10).
+  // App passes the signed-in guardian's server id today; Task 9 adds the child device id from
+  // `useChildren()` — the plan amendment R-M1-21 makes that step binding, because a zone with no
+  // device link is stored but never evaluated (the alert subscription alone is not enough).
   childDeviceId?: number;
   guardianUserIds?: number[];
+  // The server's list after a write. App hands this to the dashboard map, so a zone saved on the
+  // zones tab appears on the map tab without a second read or a stale outline.
+  onServerZones?: (zones: ServerGeofence[]) => void;
 };
 
 // A server geofence becomes a drawable MapZone only through parseWkt — the one module that knows the
@@ -85,6 +90,7 @@ export const ZonesScreen: React.FC<ZonesScreenProps> = ({
   childName,
   childDeviceId,
   guardianUserIds,
+  onServerZones,
 }) => {
   const dir = lang === 'ar' ? 'rtl' : 'ltr';
   const t = (key: string, vars?: Record<string, string | number>) => translate(key, lang, vars);
@@ -125,6 +131,13 @@ export const ZonesScreen: React.FC<ZonesScreenProps> = ({
     () => zones.map(toMapZone).filter((z): z is MapZone => z !== null),
     [zones],
   );
+
+  // Every write shows the list the SERVER read back and hands the same rows to the caller. There is
+  // no second read and no locally-patched outline: the dashboard map and this list cannot disagree.
+  const publish = (list: ServerGeofence[]) => {
+    setZones(list);
+    onServerZones?.(list);
+  };
 
   // The in-progress shape, drawn alongside the saved zones so the guardian sees what they are about to
   // save. Only complete-enough shapes are previewed; a half-drawn one is not fabricated into a place.
@@ -198,7 +211,7 @@ export const ZonesScreen: React.FC<ZonesScreenProps> = ({
       // ensures the geofenceExit subscription carries `web` (R-M1-10) — its failure throws, so the alert
       // state is announced here rather than swallowed.
       const list = editingId !== null ? await service.updateZone(draft) : await service.createZone(draft);
-      setZones(list);
+      publish(list);
       setMessage(t('zones.saved'));
       resetDraft();
     } catch (error) {
@@ -214,7 +227,7 @@ export const ZonesScreen: React.FC<ZonesScreenProps> = ({
     try {
       // A zone still linked to a device refuses (ZoneLinkedError) and leaves nothing half-saved (brief case W).
       const list = await service.deleteZone(id);
-      setZones(list);
+      publish(list);
       setMessage(t('zones.deleted'));
     } catch (error) {
       setMessage(zoneErrorMessage(error, lang));
@@ -245,7 +258,9 @@ export const ZonesScreen: React.FC<ZonesScreenProps> = ({
     } else {
       setMode('route');
       setPoints(geometry.points);
-      setBuffer(geometry.bufferMeters ?? 150);
+      // The buffer is a geofence ATTRIBUTE the server stored, not part of the WKT — reading it back is
+      // what stops an edit from silently replacing a 150 m corridor with the editor default.
+      setBuffer(bufferFromAttributes(attributes));
     }
   }
 
@@ -254,6 +269,15 @@ export const ZonesScreen: React.FC<ZonesScreenProps> = ({
     const point: LatLng = { lat, lon: lng };
     if (mode === 'circle') setCenter(point);
     else setPoints((previous) => [...previous, point]);
+  };
+
+  // A circle drawn by dragging on the map: the gesture supplies BOTH the centre and the radius, so the
+  // guardian is not asked to guess a number after drawing. A plain tap still sets the centre alone,
+  // leaving the typed radius (accessibility: no pointing device is required to choose a radius).
+  const handleCircleDrawn = (center: LatLng, radiusMeters: number) => {
+    if (!isAdmin) return;
+    setCenter(center);
+    setRadius(radiusMeters);
   };
 
   const canWrite = service !== null && isAdmin;
@@ -386,6 +410,8 @@ export const ZonesScreen: React.FC<ZonesScreenProps> = ({
               label={null}
               zones={[...mapZones, ...previewZones]}
               history={[]}
+              drawCircle={mode === 'circle' && isAdmin}
+              onCircleDrawn={handleCircleDrawn}
               onSelectCoordinates={handlePick}
             />
           </div>

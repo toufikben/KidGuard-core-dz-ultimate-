@@ -168,9 +168,10 @@ export default function App() {
     refreshOfflineCount();
   }, [refreshOfflineCount]);
 
-  // The map's saved-zone outlines are the SERVER's too. When a session hands us a zone service, the
-  // list is read from `/geofences` (listZones) on login and refreshed after every ZonesScreen write;
-  // with no service the map draws nothing, because there is no longer a local record to fall back to.
+  // The map's saved-zone outlines are the SERVER's too. This effect reads `/geofences` (listZones)
+  // when a session appears; after every write ZonesScreen hands the same server-read list back through
+  // `onServerZones`, so there is no second read and no stale outline. With no service the map draws
+  // nothing — there is no local record to fall back to.
   useEffect(() => {
     if (!zoneService) {
       setServerZones([]);
@@ -726,7 +727,6 @@ export default function App() {
           <ParentDashboard
             location={location}
             riskAssessment={riskAssessment}
-            safeZones={safeZones}
             alertHistory={alertHistory}
             healthStatus={healthStatus}
             alertPolicy={alertPolicy}
@@ -738,6 +738,8 @@ export default function App() {
                 service={zoneService}
                 isAdmin={session.user?.admin === true}
                 childName={alertPolicy.childName}
+                guardianUserIds={session.user ? [session.user.id] : undefined}
+                onServerZones={setServerZones}
               />
             }
             onUpdateAlertPolicy={handleUpdateAlertPolicy}

@@ -181,7 +181,11 @@ export const catalog: Record<string, CatalogEntry> = {
   'zones.hoursLabel': { ar: 'الأوقات الفعّالة (سمة)', fr: 'Heures actives (attribut)', en: 'Active hours (attribute)' },
   'zones.hoursFrom': { ar: 'من', fr: 'De', en: 'From' },
   'zones.hoursTo': { ar: 'إلى', fr: 'À', en: 'To' },
-  'zones.centerHint': { ar: 'انقر على الخريطة لتحديد المركز', fr: 'Cliquez sur la carte pour fixer le centre', en: 'Click the map to set the centre' },
+  'zones.centerHint': {
+    ar: 'اسحب من المركز إلى الحافة لرسم الدائرة، أو انقر لتحديد المركز ثم عدّل نصف القطر',
+    fr: 'Glissez du centre vers le bord pour dessiner le cercle, ou cliquez pour fixer le centre puis ajustez le rayon',
+    en: 'Drag from the centre to the edge to draw the circle, or click to set the centre then adjust the radius',
+  },
   'zones.polygonHint': { ar: 'انقر لإضافة رؤوس المضلّع (٣ على الأقل)', fr: 'Cliquez pour ajouter des sommets (au moins 3)', en: 'Click to add polygon vertices (at least 3)' },
   'zones.routeHint': { ar: 'انقر لإضافة نقاط المسار بالترتيب', fr: 'Cliquez pour ajouter les points du tracé dans l’ordre', en: 'Click to add route points in order' },
   'zones.saved': { ar: 'حُفظت المنطقة على الخادم', fr: 'Zone enregistrée sur le serveur', en: 'Zone saved on the server' },
@@ -192,6 +196,34 @@ export const catalog: Record<string, CatalogEntry> = {
     ar: 'أكمل رسم المنطقة أولاً: مركز للدائرة، أو ٣ رؤوس للمضلّع، أو نقطتان للمسار',
     fr: 'Terminez le dessin : un centre pour le cercle, 3 sommets pour le polygone ou 2 points pour le tracé',
     en: 'Finish the drawing first: a centre for the circle, 3 vertices for the polygon or 2 points for the route',
+  },
+  // §6 geometry refusals. validateZone returns CODES (wkt.ts) because it runs with no `lang`; these
+  // five keys are the only sentences that describe the refusal, in the guardian's own language. The
+  // numbers arrive as placeholders, never as baked Arabic digits inside a service.
+  'zones.error.radiusMin': {
+    ar: 'نصف القطر يجب ألا يقل عن {need} م (المواصفة §6: الدوائر الصغيرة تُنتج حواف زائفة)',
+    fr: 'Le rayon doit être d’au moins {need} m (spec §6 : les petits cercles produisent de fausses sorties)',
+    en: 'The radius must be at least {need} m (spec §6: small circles produce false exits)',
+  },
+  'zones.error.polygonMinPoints': {
+    ar: 'المضلّع يحتاج 3 نقاط على الأقل',
+    fr: 'Un polygone requiert au moins 3 sommets',
+    en: 'A polygon needs at least 3 vertices',
+  },
+  'zones.error.routeMinPoints': {
+    ar: 'خط المسار يحتاج نقطتين على الأقل',
+    fr: 'Un tracé requiert au moins 2 points',
+    en: 'A route needs at least 2 points',
+  },
+  'zones.error.bufferMissing': {
+    ar: 'مسارات بلا هامش: الخادم سيتخذ 25 م افتراضاً (Geofence.java:86) — حدّد الهامش صراحةً',
+    fr: 'Tracé sans marge : le serveur appliquerait 25 m par défaut (Geofence.java:86) — indiquez la marge explicitement',
+    en: 'Route zone without a buffer: the server would default to 25 m (Geofence.java:86) — set the buffer explicitly',
+  },
+  'zones.error.bufferMin': {
+    ar: 'هامش المسار يجب أن يكون ≥ {need} م',
+    fr: 'La marge du tracé doit être ≥ {need} m',
+    en: 'The route buffer must be ≥ {need} m',
   },
   // §6 seven zone types. الأوقات الفعّالة تُخزَّن كسمة، لا كنوع.
   'zones.type.school': { ar: 'مدرسة', fr: 'École', en: 'School' },

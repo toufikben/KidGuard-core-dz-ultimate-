@@ -45,6 +45,12 @@ interface MapViewProps {
   // §3: two sources more than 300 m apart. The map must announce it, not silently pick one.
   sourceConflict?: boolean;
   onSelectCoordinates?: (lat: number, lng: number) => void;
+  // ZonesScreen's circle tool (brief Task 8 Step 3: the circle button draws by drag). While true, panning is replaced
+  // by a drag that draws a dashed circle and reports centre + radius on release; a tap still reaches
+  // onSelectCoordinates so the centre can be placed without a drag. The gesture itself is browser
+  // work and stays NOT RUN until a measured run names it (R-M1-19).
+  drawCircle?: boolean;
+  onCircleDrawn?: (center: LatLng, radiusMeters: number) => void;
 }
 
 const ZONE_TONE = '#047857';
@@ -85,6 +91,8 @@ export const MapView: React.FC<MapViewProps> = ({
   history,
   sourceConflict,
   onSelectCoordinates,
+  drawCircle,
+  onCircleDrawn,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -95,9 +103,14 @@ export const MapView: React.FC<MapViewProps> = ({
   const distanceLineRef = useRef<L.Polyline | null>(null);
   const hasFramedRef = useRef<boolean>(false);
   const selectCallbackRef = useRef<MapViewProps['onSelectCoordinates']>(onSelectCoordinates);
+  const circleCallbackRef = useRef<MapViewProps['onCircleDrawn']>(onCircleDrawn);
+  const previewCircleRef = useRef<L.Circle | null>(null);
 
   const [isAutoFollow, setIsAutoFollow] = useState<boolean>(false);
   const [isLegendOpen, setIsLegendOpen] = useState<boolean>(false);
+  // The draw effect is declared before the map-creating effect, so it must re-run once the map exists
+  // (the circle tool can be armed on the very first render — ZonesScreen defaults to it).
+  const [mapReady, setMapReady] = useState<boolean>(false);
   // One shorthand for the whole file: copy is a catalog key plus the caller's language. A missing key
   // throws on purpose — the parity guard in tests/app/positions.test.ts fails the suite first.
   const t = (key: string, vars?: Record<string, string | number>) => translate(key, lang, vars);
@@ -109,6 +122,86 @@ export const MapView: React.FC<MapViewProps> = ({
   useEffect(() => {
     selectCallbackRef.current = onSelectCoordinates;
   }, [onSelectCoordinates]);
+  useEffect(() => {
+    circleCallbackRef.current = onCircleDrawn;
+  }, [onCircleDrawn]);
+
+  // The circle-drag tool. Panning is off while it is armed (a drag IS the drawing, not a pan); the
+  // dashed preview is a local layer that never becomes a zone — only a completed drag calls back, and
+  // the guardian still has to press Save. A release under 6 px is a tap: the map's own click handler
+  // places the centre at the typed radius, so the tool works without a drag (accessibility).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!drawCircle) {
+      map.dragging.enable();
+      return;
+    }
+    map.dragging.disable();
+    let start: L.LatLng | null = null;
+    let last: L.LatLng | null = null;
+
+    const clearPreview = () => {
+      if (previewCircleRef.current) {
+        map.removeLayer(previewCircleRef.current);
+        previewCircleRef.current = null;
+      }
+    };
+    const latLngOf = (event: L.LeafletEvent): L.LatLng | null => {
+      const candidate = event as unknown as { latlng?: L.LatLng };
+      return candidate.latlng ?? null;
+    };
+    const begin = (event: L.LeafletEvent) => {
+      if (start) return;
+      const point = latLngOf(event);
+      if (!point) return;
+      start = point;
+      last = point;
+      clearPreview();
+      previewCircleRef.current = L.circle(point, {
+        radius: 1, color: '#10b981', weight: 2, dashArray: '6 6', fillOpacity: 0.08,
+      }).addTo(map);
+    };
+    const move = (event: L.LeafletEvent) => {
+      if (!start) return;
+      const point = latLngOf(event);
+      if (!point) return;
+      last = point;
+      const radius = haversineMeters(start.lat, start.lng, point.lat, point.lng);
+      previewCircleRef.current?.setRadius(Math.max(radius, 1));
+    };
+    const finish = (event: L.LeafletEvent) => {
+      if (!start) return;
+      const center = start;
+      const end = latLngOf(event) ?? last;
+      const startPx = map.latLngToContainerPoint(center);
+      const draggedPx = end ? startPx.distanceTo(map.latLngToContainerPoint(end)) : 0;
+      const radius = end ? haversineMeters(center.lat, center.lng, end.lat, end.lng) : 0;
+      start = null;
+      last = null;
+      clearPreview();
+      if (draggedPx >= 6 && radius >= 10) {
+        circleCallbackRef.current?.({ lat: center.lat, lon: center.lng }, Math.round(radius));
+      }
+    };
+
+    map.on('mousedown', begin);
+    map.on('mousemove', move);
+    map.on('mouseup', finish);
+    map.on('touchstart', begin);
+    map.on('touchmove', move);
+    map.on('touchend', finish);
+    return () => {
+      map.off('mousedown', begin);
+      map.off('mousemove', move);
+      map.off('mouseup', finish);
+      map.off('touchstart', begin);
+      map.off('touchmove', move);
+      map.off('touchend', finish);
+      clearPreview();
+      map.dragging.enable();
+    };
+  }, [drawCircle, mapReady]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -133,6 +226,7 @@ export const MapView: React.FC<MapViewProps> = ({
 
     map.setView(EMPTY_VIEW, 1);
     mapRef.current = map;
+    setMapReady(true);
     setTimeout(() => {
       if (mapRef.current) mapRef.current.invalidateSize();
     }, 200);
