@@ -25,99 +25,122 @@
    (36.75475, 3.05955) ~25 m past the circle edge (geofence 1 is a 100 m circle).
 3. Wait for a `geofenceExit` frame on **both** children. Each child stamps `Date.now()` when the frame
    is handed to the app; those stamps are the arrival times, so one guardian's arrival does not depend
-   on the other's.
+   on the other's. Each child also records its own signed-in **user id** (via the shipped `whoAmI()`),
+   so the summary can prove two distinct identities, not merely two sessions.
 
 ## Command (exact)
 
 ```bash
 set -a; source lab/traccar/fanout.env; set +a
-node tools/m1/ac3-fanout.mjs --device=lab-child-1
+node tools/m1/ac3-fanout.mjs --device=lab-child-1 --seconds=45
 ```
 
-## Output (verbatim, exit 0)
+## Output (verbatim, accepted run, exit 0)
 
-```json
+This is the run on the **final tool bytes** (after the review added the identity assertion, the
+fixTime latency baseline, the multiple-event failure and the explicit exit line). Log:
+`task12-ac3-rerun.log`.
+
+```text
+clock: phone-pc=0s (fixTime is second-resolution)
 {
   "live": true,
   "delivered": true,
   "inside": {
-    "ts": 1792832125,
-    "at": 1792832127887,
+    "ts": 1792835666,
+    "commandStart": 1792835667202,
+    "at": 1792835669356,
     "response": "HTTP/1.1 200 OK"
   },
   "outside": {
-    "ts": 1792832130,
-    "at": 1792832132643,
+    "ts": 1792835671,
+    "commandStart": 1792835671968,
+    "at": 1792835674108,
     "response": "HTTP/1.1 200 OK"
   },
-  "deltaMs": 2,
+  "deltaMs": 0,
   "sameEvent": true,
+  "distinctIdentities": true,
   "leftoverZonesSuspected": false,
   "guardians": [
     {
       "label": "guardian-a",
+      "userId": 1,
       "states": [
         {
-          "at": 1792832125233,
+          "at": 1792835667007,
           "state": "live"
         }
       ],
       "exits": [
         {
-          "at": 1792832133756,
-          "id": 55,
+          "at": 1792835675844,
+          "id": 74,
           "type": "geofenceExit",
-          "eventTime": "2026-10-24T08:55:30.000+00:00",
+          "eventTime": "2026-10-24T09:54:31.000+00:00",
           "deviceId": 1,
           "geofenceId": 1,
-          "positionId": 74,
-          "latencyFromOutsideMs": 1113
+          "positionId": 110,
+          "latencyFromFixTimeMs": 4844,
+          "latencyFromCommandReturnMs": 1736
         }
       ],
       "anyFallback": false
     },
     {
       "label": "guardian-b",
+      "userId": 2,
       "states": [
         {
-          "at": 1792832125173,
+          "at": 1792835666593,
           "state": "live"
         }
       ],
       "exits": [
         {
-          "at": 1792832133758,
-          "id": 55,
+          "at": 1792835675844,
+          "id": 74,
           "type": "geofenceExit",
-          "eventTime": "2026-10-24T08:55:30.000+00:00",
+          "eventTime": "2026-10-24T09:54:31.000+00:00",
           "deviceId": 1,
           "geofenceId": 1,
-          "positionId": 74,
-          "latencyFromOutsideMs": 1115
+          "positionId": 110,
+          "latencyFromFixTimeMs": 4844,
+          "latencyFromCommandReturnMs": 1736
         }
       ],
       "anyFallback": false
     }
   ],
   "logs": {
-    "dir": "C:\\Users\\Administrator\\Documents\\Qoder\\2026-10-05\\6bdda3ce\\kidguard-core\\lab\\logs\\ac3-fanout-2026-10-24T08-55-20-227Z",
-    "a": "C:\\Users\\Administrator\\Documents\\Qoder\\2026-10-05\\6bdda3ce\\kidguard-core\\lab\\logs\\ac3-fanout-2026-10-24T08-55-20-227Z\\guardian-a.ndjson",
-    "b": "C:\\Users\\Administrator\\Documents\\Qoder\\2026-10-05\\6bdda3ce\\kidguard-core\\lab\\logs\\ac3-fanout-2026-10-24T08-55-20-227Z\\guardian-b.ndjson"
+    "dir": "C:\\Users\\Administrator\\Documents\\Qoder\\2026-10-05\\6bdda3ce\\kidguard-core\\lab\\logs\\ac3-fanout-2026-10-24T09-54-20-215Z",
+    "a": "C:\\Users\\Administrator\\Documents\\Qoder\\2026-10-05\\6bdda3ce\\kidguard-core\\lab\\logs\\ac3-fanout-2026-10-24T09-54-20-215Z\\guardian-a.ndjson",
+    "b": "C:\\Users\\Administrator\\Documents\\Qoder\\2026-10-05\\6bdda3ce\\kidguard-core\\lab\\logs\\ac3-fanout-2026-10-24T09-54-20-215Z\\guardian-b.ndjson"
   }
 }
+exit=0
+EXIT=0
 ```
 
-Raw per-frame NDJSON stays in `lab/logs/ac3-fanout-2026-10-24T08-55-20-227Z/` (git-ignored, local
+Raw per-frame NDJSON stays in `lab/logs/ac3-fanout-2026-10-24T09-54-20-215Z/` (git-ignored, local
 artifact; the numbers above are the tool's own summary of those lines).
 
 ## Reading
 
 - **Both sessions were live before the injection** (`state:"live"`, `anyFallback:false` on both), so the
   arrivals are socket frames, not polling results.
-- **Exactly one event reached each guardian**: id **55**, `geofenceExit`, device 1, geofence 1,
-  position 74, eventTime `08:55:30Z`. `sameEvent:true` and `leftoverZonesSuspected:false`.
-- **Independent arrivals**: guardian-a at 1113 ms after the outside injection, guardian-b at 1115 ms —
-  **2 ms apart**. Neither waited for the other to fail or to finish.
+- **Two distinct signed-in identities are in the artifact**: guardian-a `userId 1`, guardian-b
+  `userId 2` (recorded by `whoAmI()` before subscribing). `distinctIdentities:true`; the tool exits
+  non-zero if an id is missing or equal.
+- **Exactly one event reached each guardian**: id **74**, `geofenceExit`, device 1, geofence 1,
+  position 110, eventTime `09:54:31Z`. `sameEvent:true`, `leftoverZonesSuspected:false` — and a
+  multiple-event run now fails the exit code, not just a printed flag.
+- **Latency is measured from the position's own `fixTime`** (`outside.ts`): **4844 ms** to each
+  guardian. The old 1736 ms number is arrival-minus-command-return; it is kept only for traceability,
+  because the adb command sleeps 2 s *after* sending and is not an injection time.
+- **Independent arrival stamps**: both children stamped the frame in the same millisecond
+  (`deltaMs: 0`); each stamp is taken in its own process, so neither depends on the other. A zero
+  delta is a coincidence of local broadcast, not a shared clock read.
 - An earlier scratch run on the same day delivered **five** `geofenceExit` events because leftover
   Task 8 zones shared the school center; those zones (38–41) were unlinked and deleted through the
   service, and the rerun above delivered exactly one. That cleanup is why `leftoverZonesSuspected` is a
@@ -125,6 +148,11 @@ artifact; the numbers above are the tool's own summary of those lines).
 
 ## What this does NOT prove
 
+- **Not the app-side confirmed P1 path.** The children subscribe with `connectLive()` and record the
+  raw server `geofenceExit`. They do **not** run `AlertsLog` → `createExitTracker` (three consecutive
+  outside readings) and the outside point is only ~25 m past the circle, below the ≥50 m margin that is
+  still M2 debt. Confirmation and margin are **unit-tested only** (`tests/app/events.test.ts`), not
+  live-exercised here.
 - **Not a generic channel result.** Mail and Telegram are **NOT RUN** — mail has no real recipient in
   the lab (`mail.debug=true`), and Telegram is deliberately absent from `notificator.types`. Native
   push/system notifications are **NOT RUN (needs APK)**.
@@ -132,4 +160,4 @@ artifact; the numbers above are the tool's own summary of those lines).
   reconnection, outage, or scale measurement was made.
 - **Not a per-user filtering proof beyond these two accounts**: both are legitimate recipients
   (admin by role; guardian 2 by the bootstrap links). What is measured is delivery to two distinct
-  authenticated sessions, not the server's behaviour for an unlinked third user.
+  authenticated users, not the server's behaviour for an unlinked third user.

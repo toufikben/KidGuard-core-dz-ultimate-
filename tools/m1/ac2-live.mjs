@@ -2,9 +2,11 @@
 //
 // AC-2 has two halves: the drawn zone must exist on the server, and the app must not keep a local
 // record of it. The first half is read back with `listZones()` (the server's own `area`, not the
-// draft we sent). The second half is measured with a localStorage spy installed BEFORE the service
-// is imported and used: every read/write is recorded, so "zero calls" is a count, not a claim.
-// The zone is deleted again in `finally`, so the lab is left as it was found.
+// draft we sent). The second half is measured with a localStorage RECORDING STUB installed before
+// the service's first use (static imports are evaluated earlier; the services touch the global at
+// call time): every read/write is recorded, so "zero calls" is a count, not a claim. It proves the
+// save path does not call `globalThis.localStorage`; it is not a real browser store.
+// The zone is deleted again in `finally` even if the re-read failed, so the lab is left as found.
 //
 // Credentials come from env (lab/traccar/fanout.env); nothing secret is printed — no email, no
 // password, no token. Run:
@@ -39,6 +41,7 @@ if (!(process.env.LAB_ADMIN_EMAIL && process.env.LAB_ADMIN_PASSWORD)) {
 }
 
 const name = `lab-zone-m1-gate-${Date.now()}`;
+let created = null;
 let saved = null;
 let service = null;
 let exitCode = 0;
@@ -53,11 +56,12 @@ try {
   if (!client) throw new Error('no client after sign-in');
   service = createZoneService({ client });
 
-  await service.createZone({
+  const afterCreate = await service.createZone({
     name,
     type: 'school',
     geometry: { kind: 'circle', lat: 36.7538, lon: 3.0588, radiusMeters: 120 },
   });
+  created = (afterCreate ?? []).find((zone) => zone.name === name) ?? null;
   saved = (await service.listZones()).find((zone) => zone.name === name);
   if (!saved) throw new Error('POST succeeded but the re-read list does not contain the zone');
 
@@ -79,15 +83,23 @@ try {
   console.error(`FAIL ${error?.message ?? error}`);
   exitCode = 1;
 } finally {
-  if (service && saved) {
+  // Fall back to the create response (or a fresh lookup by unique name) when the re-read failed.
+  let id = saved?.id ?? created?.id ?? null;
+  if (service && id === null) {
     try {
-      await service.deleteZone(saved.id);
-      console.log(`cleanup: deleted geofence ${saved.id}`);
+      id = (await service.listZones()).find((zone) => zone.name === name)?.id ?? null;
+    } catch { id = null; }
+  }
+  if (service && id !== null) {
+    try {
+      await service.deleteZone(id);
+      console.log(`cleanup: deleted geofence ${id}`);
     } catch (error) {
-      console.error(`cleanup: geofence ${saved.id} NOT deleted: ${error?.message ?? error}`);
+      console.error(`cleanup: geofence ${id} NOT deleted: ${error?.message ?? error}`);
       exitCode = 1;
     }
   }
   resetSession();
+  console.log(`exit=${exitCode}`);
   process.exitCode = exitCode;
 }

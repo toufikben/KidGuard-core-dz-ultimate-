@@ -1,15 +1,20 @@
-// tools/m1/ac3-fanout.mjs — AC-3: one confirmed geofenceExit must reach TWO guardians independently.
+// tools/m1/ac3-fanout.mjs — AC-3: one server-produced geofenceExit must reach TWO guardians
+// independently. The app-side "three consecutive outside reads" confirmation and the ≥50 m margin
+// are NOT exercised here; they are unit-tested only (this is the raw web-channel fan-out gate).
 //
 // Starts two child processes (tools/m1/ac3-guardian.mjs), each signed in as a DIFFERENT guardian and
 // subscribed through the shipped socket client on the lab's real `web` notification channel. When both
 // report `live`, the tool injects one position inside the school zone and one outside it (manual
 // osmand injection from the phone over `adb reverse tcp:5055`, R35/R37). It then waits for a
 // `geofenceExit` frame on BOTH children. Arrival times are the children's own receive timestamps, so
-// one guardian's arrival is independent of the other's.
+// one guardian's arrival is independent of the other's. Latency is reported as
+// arrival − the injected position's fixTime (`ts`), because the adb command itself sleeps 2 s after
+// sending; the old "after the command returned" number is kept for traceability only.
 //
-// Exit code 0 only when both guardians were live, no child fell back, and both received the same
-// event id. Anything else is a failed measurement, never a pass. Nothing secret is printed: labels,
-// ids and timestamps only. Run:
+// Exit code 0 only when both guardians were live, no child fell back, both received the SAME event
+// id, exactly one event arrived, and the two signed-in user ids are present and DISTINCT. Anything
+// else is a failed measurement, never a pass. Nothing secret is printed: labels, ids and timestamps
+// only. Run:
 //   set -a; source lab/traccar/fanout.env; set +a
 //   node tools/m1/ac3-fanout.mjs --device=lab-child-1
 import { execFileSync, spawn } from 'node:child_process';
@@ -58,8 +63,12 @@ function sendPosition({ lat, lon }, speed, bearing) {
   const line = `GET /?id=${DEVICE}&valid=true&timestamp=${ts}&lat=${lat}&lon=${lon}`
     + `&accuracy=12&speed=${speed}&bearing=${bearing} HTTP/1.0\\r\\n\\r\\n`;
   const remote = `{ printf '${line}'; sleep 2; } | nc -w 5 127.0.0.1 5055`;
+  const commandStart = Date.now();
   const body = adb(['shell', remote]);
-  return { ts, at: Date.now(), response: body.split(/\r?\n/)[0] ?? '' };
+  // `at` is AFTER the adb command returns (it includes the 2 s sleep), so it is an upper bound on
+  // command duration, never an injection time. `ts` is the position's own fixTime on the phone — the
+  // same second the server stores as eventTime — so arrival-minus-ts is the fixTime→arrival latency.
+  return { ts, commandStart, at: Date.now(), response: body.split(/\r?\n/)[0] ?? '' };
 }
 
 function lines(path) {
@@ -84,6 +93,10 @@ for (const file of [OUT_A, OUT_B]) rmSync(file, { force: true });
 
 const reverse = adb(['reverse', '--list']);
 if (!/tcp:5055/.test(reverse)) adb(['reverse', 'tcp:5055', 'tcp:5055']);
+
+const phoneBefore = phoneEpoch();
+const pcBefore = Math.floor(Date.now() / 1000);
+console.log(`clock: phone-pc=${phoneBefore - pcBefore}s (fixTime is second-resolution)`);
 
 const childEnv = { ...process.env, AC3_SECONDS: String(SECONDS) };
 const children = [
@@ -136,15 +149,24 @@ const summary = (file, label) => {
     deviceId: row.event.deviceId,
     geofenceId: row.event.geofenceId,
     positionId: row.event.positionId,
-    latencyFromOutsideMs: outside === null ? null : row.at - outside.at,
+    latencyFromFixTimeMs: outside === null ? null : row.at - outside.ts * 1000,
+    latencyFromCommandReturnMs: outside === null ? null : row.at - outside.at,
   }));
-  return { label, states, exits, anyFallback: states.some((state) => state.state === 'fallback') };
+  return {
+    label,
+    userId: rows.find((row) => row.user)?.user.id ?? null,
+    states,
+    exits,
+    anyFallback: states.some((state) => state.state === 'fallback'),
+  };
 };
 
 const guardianA = summary(OUT_A, 'guardian-a');
 const guardianB = summary(OUT_B, 'guardian-b');
 const sameEvent = guardianA.exits.length > 0 && guardianB.exits.length > 0
   && guardianA.exits.every((exit) => guardianB.exits.some((other) => other.id === exit.id));
+const distinctIdentities = guardianA.userId !== null && guardianB.userId !== null
+  && guardianA.userId !== guardianB.userId;
 const aAt = guardianA.exits[0]?.at ?? null;
 const bAt = guardianB.exits[0]?.at ?? null;
 const deltaMs = aAt !== null && bAt !== null ? Math.abs(aAt - bAt) : null;
@@ -157,11 +179,13 @@ console.log(JSON.stringify({
   outside,
   deltaMs,
   sameEvent,
+  distinctIdentities,
   leftoverZonesSuspected: moreThanOne,
   guardians: [guardianA, guardianB],
   logs: { dir: RUN_DIR, a: OUT_A, b: OUT_B },
 }, null, 2));
 
-if (!(live && delivered && sameEvent) || guardianA.anyFallback || guardianB.anyFallback) {
-  process.exitCode = 1;
-}
+const ok = live && delivered && sameEvent && distinctIdentities
+  && !guardianA.anyFallback && !guardianB.anyFallback && !moreThanOne;
+console.log(`exit=${ok ? 0 : 1}`);
+process.exitCode = ok ? 0 : 1;

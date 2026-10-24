@@ -69,6 +69,8 @@ const reverseList = execFileSync(adb, ['reverse', '--list'], { encoding: 'utf8' 
 if (!/tcp:5055/.test(reverseList)) {
   execFileSync(adb, ['reverse', 'tcp:5055', 'tcp:5055'], { encoding: 'utf8' });
   console.log('tunnel: opened tcp:5055 (it was absent)');
+  // Give adb's reverse socket a moment; the first injection right after opening was refused once.
+  await new Promise((resolve) => setTimeout(resolve, 1000));
 } else {
   console.log('tunnel: tcp:5055 already present');
 }
@@ -145,14 +147,17 @@ try {
   console.log(`| samples | measured | p50 (ms) | p95 (ms) | max (ms) |`);
   console.log(`| ${samples} | ${sorted.length} | ${p50 ?? '-'} | ${p95 ?? '-'} | ${max ?? '-'} |`);
   console.log('source: MANUALLY INJECTED from the phone over adb reverse — no real GPS (R35/R37)');
+  console.log('note: each latency is an upper bound; the adb injection command itself sleeps 2 s before nc closes');
 
   let verdict;
   if (sorted.length === 0) verdict = `NO DATA p95 not measured (records: 0)`;
   else if (clockSkew > 0) verdict = `INVALID clock skew: ${clockSkew} of ${sorted.length} samples have a non-positive latency`;
+  else if (sorted.length < samples) verdict = `PARTIAL ${sorted.length}/${samples} measured — not enough for a PASS`;
   else if (p95 === null) verdict = `NO DATA p95 not measured (records: ${sorted.length})`;
   else if (p95 <= TARGET_P95_MS) verdict = `PASS p95 <= ${TARGET_P95_MS} ms (fixTime -> /positions availability)`;
   else verdict = `FAIL p95 > ${TARGET_P95_MS} ms (fixTime -> /positions availability)`;
   console.log(`verdict: ${verdict}`);
+  console.log(`exit=${verdict.startsWith('PASS') ? 0 : 1}`);
   process.exitCode = verdict.startsWith('PASS') ? 0 : 1;
 } finally {
   resetSession();
