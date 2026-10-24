@@ -1294,12 +1294,15 @@ import { fakeClock, forwardPayload } from './helpers.ts';
 
 const T0 = 1_700_000_000_000;
 
-function sheetFor(options: { alarm?: string; type?: string; serial?: string } = {}) {
+function sheetFor(options: { alarm?: string | null; type?: string; serial?: string } = {}) {
   const clock = fakeClock(T0);
   const audit = createAuditLog({ now: clock.now });
   const store = createIncidentStore({ audit, recipients: [{ userId: 1 }, { userId: 2 }], now: clock.now });
   const incident = store.ingest(forwardPayload({
-    alarm: options.alarm ?? 'sos', type: options.type ?? 'alarm', serial: options.serial ?? '1234567890HMS8',
+    alarm: options.alarm === undefined ? 'sos' : options.alarm,
+    type: options.type ?? 'alarm',
+    serial: options.serial ?? '1234567890HMS8',
+    fixTime: new Date(T0).toISOString(),
   }))!;
   return { clock, store, incident };
 }
@@ -1311,7 +1314,7 @@ test('sheet: a P0 sheet names the incident, tier, coordinates, age, and the lab 
   assert.match(text, /P0/);
   assert.match(text, /36\.75380/);
   assert.match(text, /3\.05880/);
-  assert.match(text, /12/);
+  assert.match(text, /عمر الموقع: 12 ثانية/);
   assert.match(text, /بيانات مختبر/);
 });
 
@@ -1380,13 +1383,14 @@ test('sheet: output is bounded at 4000 characters and keeps the footer', () => {
   const audit = createAuditLog({ now: clock.now });
   const many = Array.from({ length: 60 }, (_, index) => ({ userId: index + 1, name: 'مستلم طويل جداً '.repeat(4) }));
   const store = createIncidentStore({ audit, recipients: many, now: clock.now });
-  const incident = store.ingest(forwardPayload())!;
+  const incident = store.ingest(forwardPayload({ type: 'alarm', alarm: 'x'.repeat(2_000) }))!;
   for (let i = 0; i < 30; i += 1) {
     clock.advance(1000);
     store.delivered(incident.id, (i % 60) + 1);
   }
   const text = renderIncidentSheet(store.get(incident.id), clock.now());
   assert.ok(text.length <= MAX_SHEET_CHARS, `sheet length ${text.length}`);
+  assert.match(text, /اقتُطع/);
   assert.match(text, /بيانات مختبر/);
 });
 
@@ -1422,6 +1426,17 @@ test('sheet: truncation is honest — the marker appears exactly when timeline e
   assert.match(none, /اقتُطع/);
   assert.match(none, /بيانات مختبر/);
   assert.doesNotMatch(none, /UTC — /);
+});
+
+test('sheet: the last-resort cut never splits a surrogate pair', () => {
+  const clock = fakeClock(T0);
+  const audit = createAuditLog({ now: clock.now });
+  const store = createIncidentStore({ audit, recipients: [{ userId: 1 }], now: clock.now });
+  const incident = store.ingest(forwardPayload({ type: 'alarm', alarm: 'xx😀'.repeat(2_200) }))!;
+  const text = renderIncidentSheet(store.get(incident.id), clock.now());
+  assert.ok(text.length <= MAX_SHEET_CHARS, `sheet length ${text.length}`);
+  assert.doesNotMatch(text, /(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  assert.match(text, /بيانات مختبر/);
 });
 
 test('sheet: no NaN or undefined reaches the text', () => {
@@ -1572,7 +1587,9 @@ export function renderIncidentSheet(incident: Incident, nowMs: number): string {
   if (text.length <= MAX_SHEET_CHARS) return text;
   // Last resort: keep the two honest closing lines and cut from the middle of the body.
   const tail = `\n… (اقتُطع)\n${AC17}\n${LAB_FOOTER}`;
-  return `${text.slice(0, MAX_SHEET_CHARS - tail.length)}${tail}`;
+  let cut = MAX_SHEET_CHARS - tail.length;
+  if ((text.charCodeAt(cut - 1) & 0xfc00) === 0xd800) cut -= 1;
+  return `${text.slice(0, cut)}${tail}`;
 }
 ```
 
@@ -1593,7 +1610,7 @@ and inside the returned object, after `get`:
 - [ ] **Step 4: Run the tests to verify they pass and raise the floor**
 
 Run: `npm run test:relay --silent`
-Expected: `ℹ tests 44`, `ℹ fail 0`.
+Expected: `ℹ tests 45`, `ℹ fail 0`.
 
 Set `EXPECTED_MIN_TESTS` in `m2-ci.yml` to the printed count.
 
@@ -2259,7 +2276,7 @@ export type RelayServer = ReturnType<typeof createRelayServer>;
 - [ ] **Step 4: Run the tests to verify they pass and raise the floor**
 
 Run: `npm run test:relay --silent`
-Expected: `ℹ tests 62`, `ℹ fail 0` (10 + 22 + 12 + 18).
+Expected: `ℹ tests 63`, `ℹ fail 0` (10 + 22 + 13 + 18).
 
 Set `EXPECTED_MIN_TESTS` in `m2-ci.yml` to the printed count.
 
@@ -2682,7 +2699,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
 - [ ] **Step 4: Run the tests to verify they pass and raise the floor**
 
 Run: `npm run test:relay --silent`
-Expected: `ℹ tests 76`, `ℹ fail 0` (10 + 22 + 12 + 18 + 14).
+Expected: `ℹ tests 77`, `ℹ fail 0` (10 + 22 + 13 + 18 + 14).
 
 Run: `npm run lint`
 Expected: exit 0 (this is the first task that imports `node:fs`/`node:path`/`node:url` in `relay/`).
