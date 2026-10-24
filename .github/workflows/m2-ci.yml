@@ -21,7 +21,7 @@ jobs:
       # Node 22 prints `# tests`, Node 24 prints `ℹ tests`; accept both.
       - name: Run relay tests with a measured count floor
         env:
-          EXPECTED_MIN_TESTS: '10'
+          EXPECTED_MIN_TESTS: '25'
         run: |
           set -o pipefail
           npm run test:relay --silent | tee /tmp/relay.log
