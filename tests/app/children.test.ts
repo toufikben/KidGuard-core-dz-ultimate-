@@ -624,6 +624,41 @@ test('an error shows the failure and never the empty-state sentences it cannot v
     'a failed guardian read is not "no guardian"');
   assert.equal(oneChild.includes(translate('contacts.count', 'ar', { count: 0 })), false,
     'no count is claimed from a read that failed');
+  assert.equal(oneChild.includes(translate('contacts.noCandidates', 'ar')), false,
+    'a failed read is not "nobody is left to add"');
+});
+
+// ── an in-flight read claims nothing: no count, no "none", no candidate verdict ──────────────────
+test('a loading guardian read shows the loading line and no verdict', () => {
+  const props = {
+    lang: 'ar' as const,
+    selectedId: 11,
+    onSelectChild: () => {},
+    guardians: [],
+    candidates: [],
+    summary: guardianSummary([]),
+    loading: true,
+    error: null,
+    isAdmin: true,
+    onAssign: () => {},
+    onUnassign: () => {},
+    onRefresh: () => {},
+  };
+
+  const oneChild = renderToString(React.createElement(ContactsScreen, { ...props, children: [childOf(DEVICE_A)] }));
+  assert.ok(oneChild.includes(translate('contacts.loading', 'ar')), 'the loading line is named');
+  assert.equal(oneChild.includes(translate('contacts.count', 'ar', { count: 0 })), false,
+    'no count is claimed before the read lands');
+  assert.equal(oneChild.includes(translate('contacts.none', 'ar')), false,
+    'an in-flight read is not "no guardian"');
+  assert.equal(oneChild.includes(translate('contacts.noCandidates', 'ar')), false,
+    'an in-flight read is not "nobody is left to add"');
+
+  const noChildren = renderToString(React.createElement(ContactsScreen, { ...props, children: [], selectedId: null }));
+  assert.equal(noChildren.includes(translate('contacts.child', 'ar')), false,
+    'no empty "child" heading while the list is still loading');
+  assert.equal(noChildren.includes(translate('children.noneShared', 'ar')), false,
+    'a loading read is not "no child is shared"');
 });
 
 // ── helper ──────────────────────────────────────────────────────────────────────────────────────
