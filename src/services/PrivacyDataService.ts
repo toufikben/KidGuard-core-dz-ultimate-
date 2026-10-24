@@ -1,3 +1,5 @@
+// WHY: this list is the ERASER of legacy installs, not a writer — several of these names survive
+// only here so export/delete can still reach records older builds left behind.
 const STORAGE_KEYS = [
   'kidguard_safe_zones',
   'kidguard_alert_policy',
