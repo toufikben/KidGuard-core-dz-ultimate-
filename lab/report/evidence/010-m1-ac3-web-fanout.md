@@ -32,8 +32,11 @@
 
 ```bash
 set -a; source lab/traccar/fanout.env; set +a
-node tools/m1/ac3-fanout.mjs --device=lab-child-1 --seconds=45
+node tools/m1/ac3-fanout.mjs --device=lab-child-1 --seconds=45; echo "EXIT=$?"
 ```
+
+The tool prints its own `exit=` line on the normal path; the shell `EXIT=` line above is the
+authoritative process status (and is what a thrown error would still report).
 
 ## Output (verbatim, accepted run, exit 0)
 
@@ -133,11 +136,16 @@ artifact; the numbers above are the tool's own summary of those lines).
   `userId 2` (recorded by `whoAmI()` before subscribing). `distinctIdentities:true`; the tool exits
   non-zero if an id is missing or equal.
 - **Exactly one event reached each guardian**: id **74**, `geofenceExit`, device 1, geofence 1,
-  position 110, eventTime `09:54:31Z`. `sameEvent:true`, `leftoverZonesSuspected:false` — and a
-  multiple-event run now fails the exit code, not just a printed flag.
+  position 110, eventTime `09:54:31Z`. `sameEvent:true`, `leftoverZonesSuspected:false` — and a run
+  carrying **more than one distinct event id** now fails the exit code, not just a printed flag.
+  Duplicate frames of the same id count once: the event's identity here is its id.
 - **Latency is measured from the position's own `fixTime`** (`outside.ts`): **4844 ms** to each
-  guardian. The old 1736 ms number is arrival-minus-command-return; it is kept only for traceability,
-  because the adb command sleeps 2 s *after* sending and is not an injection time.
+  guardian. The same run's arrival-minus-**command-return** figure, 1736 ms, is kept only for
+  traceability: the adb command sleeps 2 s *after* sending, so its return is not an injection time.
+  (The figure published before this fix was 1113/1115 ms on the earlier event-55 run, also timed from
+  command return; it is superseded, not comparable to 4844.)
+- `commandStart` in the JSON is a diagnostic dispatch stamp (phone-epoch read + adb startup, ~1 s);
+  it feeds no latency and no assertion.
 - **Independent arrival stamps**: both children stamped the frame in the same millisecond
   (`deltaMs: 0`); each stamp is taken in its own process, so neither depends on the other. A zero
   delta is a coincidence of local broadcast, not a shared clock read.
@@ -156,6 +164,10 @@ artifact; the numbers above are the tool's own summary of those lines).
 - **Not a generic channel result.** Mail and Telegram are **NOT RUN** — mail has no real recipient in
   the lab (`mail.debug=true`), and Telegram is deliberately absent from `notificator.types`. Native
   push/system notifications are **NOT RUN (needs APK)**.
+- **Child exit status is not observed.** Both children are killed after their frames are collected,
+  and the orchestrator does not wait on their exit codes (their stderr is discarded). The evidence is
+  the frames each child wrote; a crash *after* delivery would not fail this gate. A crash before
+  subscribing would leave `live` false and fail it.
 - **Not 24/7, not a public network.** Two accounts, one device, one local Traccar over loopback; no
   reconnection, outage, or scale measurement was made.
 - **Not a per-user filtering proof beyond these two accounts**: both are legitimate recipients

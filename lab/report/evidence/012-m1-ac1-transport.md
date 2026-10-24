@@ -18,8 +18,11 @@
 
 ```bash
 set -a; source lab/traccar/fanout.env; set +a
-LAB_API_URL=http://127.0.0.1:8082/api node tools/m1/ac1-transport.mjs --device=lab-child-1 --samples=10
+LAB_API_URL=http://127.0.0.1:8082/api node tools/m1/ac1-transport.mjs --device=lab-child-1 --samples=10; echo "EXIT=$?"
 ```
+
+The tool prints its own `exit=` line on the normal path; the shell `EXIT=` line above is the
+authoritative process status (and is what a thrown error would still report).
 
 ## Output (verbatim, accepted run, exit 0)
 
