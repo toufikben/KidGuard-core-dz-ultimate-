@@ -18,13 +18,14 @@ jobs:
         run: npm run build
       # نفس درس M0: ملف *.test.mjs/‎.test.ts بلا test() يطبع tests 1 ويخرج ٠،
       # فالبوابة أرضية عدد لا شفرة خروج. تُرفع الأرقام في نفس الالتزام الذي يزيد الاختبارات.
+      # Node 22 يطبع TAP عند التوجيه (`# tests`) وNode 24 يطبع spec (`ℹ tests`)، فالمُحلّل يقبل الشكلين.
       - name: Run app tests with a measured count floor
         env:
           EXPECTED_MIN_TESTS: '166'
         run: |
           set -o pipefail
           npm run test:app --silent | tee /tmp/app.log
-          n=$(grep -E '^ℹ tests ' /tmp/app.log | awk '{print $3}')
+          n=$(grep -E '^(#|ℹ) tests ' /tmp/app.log | awk '{print $3}')
           echo "detected tests=$n (floor $EXPECTED_MIN_TESTS)"
           awk -v n="$n" -v f="$EXPECTED_MIN_TESTS" 'BEGIN { exit (n+0 >= f+0) ? 0 : 1 }'
       - name: Lab suite must not regress
@@ -33,5 +34,5 @@ jobs:
         run: |
           set -o pipefail
           npm run test:lab --silent | tee /tmp/lab.log
-          n=$(grep -E '^ℹ tests ' /tmp/lab.log | awk '{print $3}')
+          n=$(grep -E '^(#|ℹ) tests ' /tmp/lab.log | awk '{print $3}')
           awk -v n="$n" -v f="$EXPECTED_MIN_TESTS" 'BEGIN { exit (n+0 >= f+0) ? 0 : 1 }'
