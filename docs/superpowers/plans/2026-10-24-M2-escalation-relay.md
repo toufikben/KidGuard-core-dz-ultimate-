@@ -1390,6 +1390,40 @@ test('sheet: output is bounded at 4000 characters and keeps the footer', () => {
   assert.match(text, /بيانات مختبر/);
 });
 
+test('sheet: truncation is honest — the marker appears exactly when timeline entries are omitted', () => {
+  const partialClock = fakeClock(T0);
+  const partialAudit = createAuditLog({ now: partialClock.now });
+  const partialStore = createIncidentStore({
+    audit: partialAudit, recipients: [{ userId: 1 }, { userId: 2 }], now: partialClock.now,
+  });
+  const partialIncident = partialStore.ingest(forwardPayload({ type: 'alarm', alarm: 'x'.repeat(3_450) }))!;
+  partialClock.advance(1_000);
+  partialStore.delivered(partialIncident.id, 1);
+  partialClock.advance(1_000);
+  partialStore.opened(partialIncident.id, 2);
+  const partial = renderIncidentSheet(partialStore.get(partialIncident.id), partialClock.now());
+  assert.ok(partial.length <= MAX_SHEET_CHARS, `sheet length ${partial.length}`);
+  assert.match(partial, /اقتُطع/);
+  assert.match(partial, /بيانات مختبر/);
+  assert.equal((partial.match(/UTC — /g) ?? []).length, 2);
+
+  const noneClock = fakeClock(T0);
+  const noneAudit = createAuditLog({ now: noneClock.now });
+  const noneStore = createIncidentStore({
+    audit: noneAudit, recipients: [{ userId: 1 }, { userId: 2 }], now: noneClock.now,
+  });
+  const noneIncident = noneStore.ingest(forwardPayload({ type: 'alarm', alarm: 'x'.repeat(3_500) }))!;
+  noneClock.advance(1_000);
+  noneStore.delivered(noneIncident.id, 1);
+  noneClock.advance(1_000);
+  noneStore.opened(noneIncident.id, 2);
+  const none = renderIncidentSheet(noneStore.get(noneIncident.id), noneClock.now());
+  assert.ok(none.length <= MAX_SHEET_CHARS, `sheet length ${none.length}`);
+  assert.match(none, /اقتُطع/);
+  assert.match(none, /بيانات مختبر/);
+  assert.doesNotMatch(none, /UTC — /);
+});
+
 test('sheet: no NaN or undefined reaches the text', () => {
   const clock = fakeClock(T0);
   const audit = createAuditLog({ now: clock.now });
@@ -1513,10 +1547,11 @@ function assemble(incident: Incident, nowMs: number, timelineLimit: number, deli
   const speed = speedLine(incident);
   if (speed !== null) lines.push(speed);
   lines.push('', 'التسلسل:');
-  if (timelineLimit === 0) lines.push('… (اقتُطع)');
-  for (const entry of incident.timeline.slice(-timelineLimit)) {
+  const shownTimeline = timelineLimit === 0 ? [] : incident.timeline.slice(-timelineLimit);
+  for (const entry of shownTimeline) {
     lines.push(`${clockOf(entry.at)} — ${ACTION_LABEL[entry.action] ?? entry.action}`);
   }
+  if (shownTimeline.length < incident.timeline.length) lines.push('… (اقتُطع)');
   lines.push('', 'تسلسل التسليم:');
   const shown = Math.min(deliveryLimit, incident.recipients.length);
   for (let index = 0; index < shown; index += 1) lines.push(deliveryLine(incident, index));
@@ -1558,7 +1593,7 @@ and inside the returned object, after `get`:
 - [ ] **Step 4: Run the tests to verify they pass and raise the floor**
 
 Run: `npm run test:relay --silent`
-Expected: `ℹ tests 43`, `ℹ fail 0`.
+Expected: `ℹ tests 44`, `ℹ fail 0`.
 
 Set `EXPECTED_MIN_TESTS` in `m2-ci.yml` to the printed count.
 
@@ -2224,7 +2259,7 @@ export type RelayServer = ReturnType<typeof createRelayServer>;
 - [ ] **Step 4: Run the tests to verify they pass and raise the floor**
 
 Run: `npm run test:relay --silent`
-Expected: `ℹ tests 61`, `ℹ fail 0` (10 + 22 + 11 + 18).
+Expected: `ℹ tests 62`, `ℹ fail 0` (10 + 22 + 12 + 18).
 
 Set `EXPECTED_MIN_TESTS` in `m2-ci.yml` to the printed count.
 
@@ -2647,7 +2682,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
 - [ ] **Step 4: Run the tests to verify they pass and raise the floor**
 
 Run: `npm run test:relay --silent`
-Expected: `ℹ tests 75`, `ℹ fail 0` (10 + 22 + 11 + 18 + 14).
+Expected: `ℹ tests 76`, `ℹ fail 0` (10 + 22 + 12 + 18 + 14).
 
 Run: `npm run lint`
 Expected: exit 0 (this is the first task that imports `node:fs`/`node:path`/`node:url` in `relay/`).
