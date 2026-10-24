@@ -112,6 +112,8 @@ export function createTraccarClient({
     post: <T>(path: string, body: unknown) => request<T>('POST', path, { body }),
     put: <T>(path: string, body: unknown) => request<T>('PUT', path, { body }),
     remove: (path: string, params?: Record<string, string | number>) => request<null>('DELETE', path, { params }),
+    // Measured (005 §6/§6b): DELETE /permissions with query params is a 400 NPE; the same route answers 204 only with a JSON body.
+    removeWithBody: <T>(path: string, body: unknown) => request<T>('DELETE', path, { body }),
     // Session routes are @FormParam, not JSON: same timeout, same abort, same secret-free errors.
     postForm: <T>(path: string, params: Record<string, string | number>) => request<T>('POST', path, { form: params }),
     // POST /api/session/token is also @FormParam, but its 200 body is the token itself — 008 measured

@@ -123,6 +123,30 @@ test('a badpayload message carries the body shape, never the body itself', async
   } finally { await srv.close(); }
 });
 
+// R-M1-24, measured on the live 6.16.0 lab (005-fanout §6/§6b): DELETE /api/permissions with query
+// params is a 400 NPE, while the SAME route answers 204 for a JSON body {userId, deviceId}. The
+// shipped unassign used the query form and therefore never revoked; this pins the body form.
+test('removeWithBody sends DELETE with a JSON body and no query string', async () => {
+  const seen: { method?: string; url?: string; contentType?: string; body?: string } = {};
+  const srv = await withServer((req, res) => {
+    seen.method = req.method;
+    seen.url = req.url;
+    seen.contentType = String(req.headers['content-type'] ?? '');
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => { seen.body = body; res.writeHead(204); res.end(); });
+  });
+  try {
+    const client = createTraccarClient({ baseUrl: srv.url, credentials: { email: 'a@b.example', password: 'x' } });
+    assert.equal(await client.removeWithBody('/permissions', { userId: 7, deviceId: 11 }), null);
+    assert.equal(seen.method, 'DELETE');
+    assert.equal(seen.url, '/api/permissions', 'no query string — the query-only DELETE was measured 400');
+    assert.equal(seen.contentType, 'application/json');
+    assert.equal(seen.body, '{"userId":7,"deviceId":11}', 'user first; the server matches fields by name');
+  } finally { await srv.close(); }
+});
+
 test('a hung server becomes kind=timeout, not an infinite spinner', async () => {
   const srv = await withServer(() => { /* never answers */ });
   try {

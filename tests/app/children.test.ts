@@ -14,8 +14,9 @@
 //       childDeviceId={selectedChild.device.id}; undefined/literal/local wirings fail the guard.
 //
 // Extra guards this file adds because the brief's Produces contract names them:
-//   - unassignGuardian sends client.remove('/permissions', { userId, deviceId }) — USER FIRST;
-//   - listGuardiansFor reads permissions device-first then /users, never invents a name;
+//   - unassignGuardian sends a JSON body to /permissions with { userId, deviceId } — USER FIRST
+//     (the measured wire: a query-only DELETE is a 400 NPE, a JSON body answers 204);
+//   - listGuardiansFor reads permissions user-first then /users, never invents a name;
 //   - guardianSummary is single === count === 1;
 //   - a load failure is a catalog sentence, never a server body;
 //   - conflicting readings are announced as no-data rather than silently picked;
@@ -35,6 +36,7 @@ import { translate } from '../../src/translations/catalog.ts';
 import {
   assignGuardian,
   createChildrenController,
+  deviceDisplayName,
   guardianSummary,
   listGuardiansFor,
   pickSelectedChild,
@@ -48,8 +50,9 @@ import { ContactsScreen } from '../../src/components/ContactsScreen.tsx';
 const LAB = {
   trackerA: 'lab-tracker-a',
   trackerB: 'lab-tracker-b',
-  imeiA: 'lab-imei-a',
-  imeiB: 'lab-imei-b',
+  // Long serials: masking is only meaningful when the full value is far longer than the tail.
+  imeiA: 'lab-serial-a-000000000011',
+  imeiB: 'lab-serial-b-000000000012',
   guardianA: 'lab-guardian-a',
   guardianB: 'lab-guardian-b',
   guardianC: 'lab-guardian-c',
@@ -102,6 +105,7 @@ function fakeClient(handler: Handler): TraccarClient & { calls: Call[] } {
     post: <T>(path: string, body: unknown) => run({ method: 'POST', path, body }) as Promise<T>,
     put: <T>(path: string, body: unknown) => run({ method: 'PUT', path, body }) as Promise<T>,
     remove: (path: string, params?: Record<string, string | number>) => run({ method: 'DELETE', path, params }) as Promise<null>,
+    removeWithBody: <T>(path: string, body: unknown) => run({ method: 'DELETE', path, body }) as Promise<T>,
     postForm: <T>(path: string, params: Record<string, string | number>) => run({ method: 'POST_FORM', path, params }) as Promise<T>,
     postFormText: (path: string, params: Record<string, string | number>) => run({ method: 'POST_FORM_TEXT', path, params }) as Promise<string>,
   };
@@ -235,18 +239,19 @@ test('(ج) a viewer is refused by identity() before any POST/DELETE — zero wri
   assert.equal(client.calls.length, 0, 'the identity check needs no request of its own when injected');
 });
 
-// ── unassign: user id FIRST because it is the owner / first relation key ─────────────────────────
-test('unassignGuardian uses client.remove(/permissions) with { userId, deviceId } — user first', async () => {
+// ── unassign: JSON body, user id FIRST because it is the owner / first relation key ──────────────
+test('unassignGuardian sends a JSON body to /permissions with { userId, deviceId } — user first', async () => {
   const client = adminServer();
 
   await unassignGuardian(11, 7, { client, identity: async () => ADMIN });
 
   const deletes = client.calls.filter((call) => call.method === 'DELETE');
-  assert.equal(deletes.length, 1);
+  assert.equal(deletes.length, 1, 'exactly one DELETE is written');
   assert.equal(deletes[0].path, '/permissions');
-  assert.deepEqual(Object.keys(deletes[0].params ?? {}), ['userId', 'deviceId'],
-    'the owner key must be FIRST — the reversed pair names the wrong relation table');
-  assert.deepEqual(deletes[0].params, { userId: 7, deviceId: 11 });
+  assert.equal(deletes[0].params, undefined,
+    'the measured wire: a query-only DELETE /permissions is a 400 NPE, never a revoke');
+  assert.equal(JSON.stringify(deletes[0].body), '{"userId":7,"deviceId":11}',
+    'the owner (user) is the FIRST key of the JSON body');
 });
 
 // ── (د) the single-guardian state is a normal state, not a disabled screen ───────────────────────
@@ -329,6 +334,23 @@ test('(هـ) the displayed source is the server device name — not uniqueId, no
   }
 });
 
+// ── a nameless device is announced as unnamed, never by its serial ──────────────────────────────
+test('a device with no server name is announced as unnamed — never the uniqueId', async () => {
+  const unnamed: ServerDevice = { ...DEVICE_A, name: '' };
+  const client = readServer([unnamed], { 11: [POS_A] });
+  const snapshot = await createChildrenController({
+    client, identity: async () => ADMIN, lang: 'ar', now: () => NOW,
+  }).refresh();
+
+  const unnamedSentence = translate('children.unnamedDevice', 'ar');
+  const label = snapshot.children[0]?.label ?? '';
+  assert.ok(label.includes(unnamedSentence), 'the source is the catalog sentence for an unnamed device');
+  assert.equal(label.includes(LAB.imeiA), false, 'the full uniqueId is never substituted for a name');
+  assert.equal(label.includes(LAB.imeiA.slice(-4)), false, 'not even the masked tail stands in for a name');
+  assert.equal(deviceDisplayName(unnamed, 'ar'), unnamedSentence, 'the shared display helper agrees');
+  assert.equal(deviceDisplayName(DEVICE_A, 'ar'), LAB.trackerA, 'a named device keeps the server name');
+});
+
 // ── conflict: two sources disagree ⇒ no silent pick, the words say no data ──────────────────────
 test('a source conflict yields readings=null, freshness=null and the no-data label', async () => {
   const far = position({ id: 103, deviceId: 11, latitude: 36.80, longitude: 3.10 });
@@ -357,8 +379,8 @@ test('a failed /devices read is announced with children.loadFailed, never the se
   assert.equal(snapshot.error?.includes('lab server exploded'), false, 'the server body never reaches the screen');
 });
 
-// ── listGuardiansFor: device-first permissions read, then /users, no invented names ─────────────
-test('listGuardiansFor reads permissions device-first, then /users, and invents no name', async () => {
+// ── listGuardiansFor: user-first permissions read, then /users, no invented names ───────────────
+test('listGuardiansFor reads permissions user-first, then /users, and invents no name', async () => {
   const client = fakeClient((call) => {
     if (call.method === 'GET' && call.path === '/permissions') {
       return [
@@ -384,9 +406,10 @@ test('listGuardiansFor reads permissions device-first, then /users, and invents 
   const reads = client.calls.filter((call) => call.method === 'GET');
   assert.deepEqual(reads.map((call) => call.path), ['/permissions', '/users'],
     'the link rows are read first, then the users they point at');
-  assert.deepEqual(Object.keys(reads[0].params ?? {}), ['deviceId', 'userId'],
-    'the device→users read is device-first — the first key names the relation table');
-  assert.equal(reads[0].params?.userId, 0, '0 on the property means "any user"');
+  assert.deepEqual(Object.keys(reads[0].params ?? {}), ['userId', 'deviceId'],
+    'the user→devices read is user-first — the first key names tc_user_device');
+  assert.equal(reads[0].params?.userId, 0, '0 on the owner property means "any user"');
+  assert.equal(reads[0].params?.deviceId, 11, 'the property is the device under question');
 });
 
 // ── (و) no real child name in any fixture ───────────────────────────────────────────────────────
@@ -433,6 +456,10 @@ test('(ز R-M1-21) App renders ZonesScreen only behind selectedChild and passes 
   }
   assert.doesNotMatch(app, /childDeviceId=\{\s*(?:undefined|null|\d+)\s*\}/);
   assert.match(app, /zones\.noChild/, 'with no selected child the panel is replaced by an honest catalog sentence');
+  assert.match(app, /childName=\{deviceDisplayName\(selectedChild\.device, lang\)\}/,
+    'the map gets the same shared display name as the screens — a nameless device is a sentence, not undefined');
+  assert.equal(app.includes('childName={selectedChild.device.name}'), false,
+    'the raw optional server name never reaches escapeHtml');
 
   // The behaviour behind the literal: pickSelectedChild is the exact find/first/null rule.
   const childA = childOf(DEVICE_A);
@@ -457,6 +484,10 @@ test('R-M1-23: App always renders the guardian shell; Navbar branches on the vie
     'the dashboard is one view of the guardian shell, not a role branch');
   assert.match(app, /useChildren\(\)/, 'App consumes the server-backed children state');
   assert.match(app, /refreshChildren\(/, 'App refreshes it when the session is signed in');
+  assert.match(app, /view !== 'contacts' \|\| selectedChild === null \|\| session\.status !== 'signed-in' \|\| session\.user\?\.admin !== true/,
+    'a viewer opening the contacts view triggers no guardian read at all');
+  assert.match(app, /if \(session\.user\?\.admin !== true\)[\s\S]{0,200}return;/,
+    'loadGuardians refuses a non-admin before any /permissions or /users request');
   assert.match(app, /childPosition=\{selectedChild\?\.readings \?\? null\}/,
     'the map position is the selected child’s server reading');
   assert.match(app, /childFreshness=\{selectedChild\?\.freshness \?\? null\}/);
@@ -492,7 +523,7 @@ test('every children/contacts/tabs key exists in Arabic, French and English', ()
     'children.freshness.silent', 'children.freshness.none',
     'contacts.title', 'contacts.subtitle', 'contacts.child', 'contacts.guardians', 'contacts.count',
     'contacts.loading', 'contacts.loadFailed', 'contacts.actionFailed', 'contacts.none',
-    'contacts.singleGuardian', 'contacts.viewerReadOnly', 'contacts.available', 'contacts.add',
+    'contacts.singleGuardian', 'contacts.adminOnlyList', 'contacts.available', 'contacts.add',
     'contacts.remove', 'contacts.noCandidates',
     'tabs.dashboard', 'tabs.children', 'tabs.contacts', 'nav.online', 'nav.offline',
     'zones.noChild',
@@ -530,7 +561,69 @@ test('ChildScreen renders one row per child with the server label and the select
   assert.ok(html.includes('from lab-tracker-a, 40 s ago'), 'the first server label is rendered');
   assert.ok(html.includes('from lab-tracker-b, 3 s ago'), 'the second server label is rendered');
   assert.ok(html.includes('aria-pressed="true"'), 'the selected child is marked for assistive tech');
+  assert.ok(html.includes(`…${LAB.imeiA.slice(-4)}`), 'the serial is shown as an ellipsis plus its last four');
+  for (const serial of [LAB.imeiA, LAB.imeiB]) {
+    assert.equal(html.includes(serial), false, `the full serial ${serial} must never be rendered`);
+  }
   assert.ok(html.includes(translate('children.noneShared', 'en')) === false, 'a populated list says nothing about emptiness');
+});
+
+// ── a viewer sees the admin-only sentence, never a fake empty guardian list ─────────────────────
+test('a viewer sees contacts.adminOnlyList — no list, no count, no add/remove', () => {
+  const html = renderToString(React.createElement(ContactsScreen, {
+    lang: 'ar',
+    children: [childOf(DEVICE_A)],
+    selectedId: 11,
+    onSelectChild: () => {},
+    guardians: [],
+    candidates: [],
+    summary: guardianSummary([]),
+    loading: false,
+    error: null,
+    isAdmin: false,
+    onAssign: () => {},
+    onUnassign: () => {},
+    onRefresh: () => {},
+  }));
+
+  assert.ok(html.includes(translate('contacts.adminOnlyList', 'ar')), 'the honest viewer sentence is shown');
+  assert.equal(html.includes(translate('contacts.none', 'ar')), false,
+    'a viewer who cannot read the list is never told "no guardian"');
+  assert.equal(html.includes(translate('contacts.count', 'ar', { count: 0 })), false,
+    'a count of 0 would claim a read the viewer never made');
+  assert.equal(html.includes(translate('contacts.add', 'ar')), false, 'a viewer has no add control');
+  assert.equal(html.includes(translate('contacts.remove', 'ar')), false, 'a viewer has no remove control');
+});
+
+// ── a failed read is named; it never becomes "nothing is shared" ────────────────────────────────
+test('an error shows the failure and never the empty-state sentences it cannot verify', () => {
+  const errorLine = translate('contacts.loadFailed', 'ar');
+  const props = {
+    lang: 'ar' as const,
+    selectedId: 11,
+    onSelectChild: () => {},
+    guardians: [],
+    candidates: [],
+    summary: guardianSummary([]),
+    loading: false,
+    error: errorLine,
+    isAdmin: true,
+    onAssign: () => {},
+    onUnassign: () => {},
+    onRefresh: () => {},
+  };
+
+  const noChildren = renderToString(React.createElement(ContactsScreen, { ...props, children: [], selectedId: null }));
+  assert.ok(noChildren.includes(errorLine), 'the failure is named');
+  assert.equal(noChildren.includes(translate('children.noneShared', 'ar')), false,
+    'a failed read is not "no child is shared"');
+
+  const oneChild = renderToString(React.createElement(ContactsScreen, { ...props, children: [childOf(DEVICE_A)] }));
+  assert.ok(oneChild.includes(errorLine), 'the failure is still named');
+  assert.equal(oneChild.includes(translate('contacts.none', 'ar')), false,
+    'a failed guardian read is not "no guardian"');
+  assert.equal(oneChild.includes(translate('contacts.count', 'ar', { count: 0 })), false,
+    'no count is claimed from a read that failed');
 });
 
 // ── helper ──────────────────────────────────────────────────────────────────────────────────────

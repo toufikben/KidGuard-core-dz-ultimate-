@@ -8,17 +8,19 @@
 //    receives devices shared with them), so there is no client-side union, no local device table and
 //    no reading of `kidguard_*` storage. A device that is not in the answer does not exist here.
 //  - A label is server data: «from {device.name}, {formatPositionLabel}». The device name is never
-//    `alertPolicy.childName` (a local setting) and the `uniqueId` is only a fallback when the server
-//    gave no name at all.
+//    `alertPolicy.childName` (a local setting), and a device the server did not name is announced as
+//    unnamed — the `uniqueId` is never used as a name, and only its last four characters may appear
+//    on screen (R-M1-26).
 //  - Freshness is the three measured values from positions.ts, plus `null` meaning "no usable
 //    reading". A conflicting pair of sources is NOT resolved by picking one: readings, label and
 //    freshness all become the no-data state, exactly as §3 requires.
 //  - The admin bit is read by `identity()` on EVERY assign/unassign call — never cached. A viewer is
 //    refused before any POST/DELETE. The module also never talks to a second request path: every
-//    request rides the Task 3 client (`client.remove`, not a `.delete` that does not exist).
-//  - `unassignGuardian` sends `{ userId, deviceId }` in that order because the first key of a
-//    Traccar permission map is the owner (Permission.java:54-66, R-M1-20). Reversing it names a
-//    different relation table.
+//    request rides the Task 3 client (`client.removeWithBody`, not a `.delete` that does not exist).
+//  - `unassignGuardian` sends `{ userId, deviceId }` as a JSON body because the first key of a
+//    Traccar permission map is the owner (Permission.java:54-66, R-M1-20) and because the measured
+//    wire only revokes in that form: DELETE /permissions with query params is a 400 NPE, while a
+//    JSON body answers 204 (005-fanout §6/§6b, R-M1-24). Reversing the pair names a different table.
 import { useSyncExternalStore } from 'react';
 import { TraccarError, type TraccarClient } from '../services/traccar/client.ts';
 import { activeClient, whoAmI } from '../services/traccar/session.ts';
@@ -72,14 +74,11 @@ export type ChildrenDeps = {
 
 const EMPTY: ChildrenSnapshot = { loading: false, error: null, children: [] };
 
-// The source named in a label. The name is the server's; uniqueId is still server data and is used
-// only when the server sent no name. A device with neither is announced as unnamed, not invented.
-function sourceNameOf(device: ServerDevice, lang: CatalogLang): string {
+// The name every screen shows for one device. The name is the server's; a device the server did not
+// name is announced as unnamed — the uniqueId is NEVER substituted, and no local childName exists.
+export function deviceDisplayName(device: ServerDevice, lang: CatalogLang): string {
   const name = typeof device.name === 'string' ? device.name.trim() : '';
-  if (name !== '') return name;
-  const uniqueId = typeof device.uniqueId === 'string' ? device.uniqueId.trim() : '';
-  if (uniqueId !== '') return uniqueId;
-  return translate('children.unnamedDevice', lang);
+  return name !== '' ? name : translate('children.unnamedDevice', lang);
 }
 
 // One device + its latest positions ⇒ the one Child the screens may show. Broken timestamps and
@@ -101,7 +100,7 @@ function buildChild(device: ServerDevice, positions: ServerPosition[], at: numbe
     device,
     readings: chosen,
     label: translate('children.sourceFromDevice', lang, {
-      source: sourceNameOf(device, lang),
+      source: deviceDisplayName(device, lang),
       reading: formatPositionLabel(chosen, at, lang),
     }),
     freshness: freshnessOf(age),
@@ -191,7 +190,7 @@ export function createChildrenController({
 
 // The admin answer is asked EVERY time (R-M1-8): a cached flag would survive a server-side demotion.
 // Identity comes first, so a viewer never reaches the network for a write at all.
-async function requireAdmin(client: TraccarClient, identity: () => Promise<ServerUser>): Promise<void> {
+async function requireAdmin(identity: () => Promise<ServerUser>): Promise<void> {
   const me = await identity();
   if (me.admin !== true) throw notAdministrator();
 }
@@ -202,7 +201,7 @@ async function assignWith(
   deviceId: number,
   userId: number,
 ): Promise<void> {
-  await requireAdmin(client, identity);
+  await requireAdmin(identity);
   // Owner-first grant {"userId":…,"deviceId":…}; the permission service skips an existing link.
   await createPermissionService({ client }).linkUserToDevice(userId, deviceId);
 }
@@ -213,9 +212,9 @@ async function unassignWith(
   deviceId: number,
   userId: number,
 ): Promise<void> {
-  await requireAdmin(client, identity);
-  // The first key is the OWNER (R-M1-20): userId first. The reversed pair is a different relation.
-  await client.remove('/permissions', { userId, deviceId });
+  await requireAdmin(identity);
+  // Owner first (R-M1-20) inside a JSON body: query params were measured 400/NPE, the body 204 (R-M1-24).
+  await client.removeWithBody('/permissions', { userId, deviceId });
 }
 
 // The user id behind one permission row. Live rows carry UPPERCASE columns ({USERID:…}); a
@@ -240,8 +239,9 @@ function toServerUser(value: unknown): ServerUser | null {
 }
 
 async function readGuardiansFor(client: TraccarClient, deviceId: number): Promise<ServerUser[]> {
-  // device-FIRST: the first key names the relation table read (measured: the reversed form is a 400).
-  const rows = await client.get<Record<string, unknown>[]>('/permissions', { deviceId, userId: 0 });
+  // User-first: the first key names the relation table `tc_user_device` (there is no tc_device_user),
+  // and the sharing direction was measured as userId=N&deviceId=0 (005 §2, R-M1-25).
+  const rows = await client.get<Record<string, unknown>[]>('/permissions', { userId: 0, deviceId });
   if (!Array.isArray(rows)) {
     throw new TraccarError('badpayload', 200, 'the server returned no permission list');
   }

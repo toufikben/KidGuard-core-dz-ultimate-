@@ -6,7 +6,7 @@
 import React from 'react';
 import { Baby, RefreshCw } from 'lucide-react';
 import { translate, type CatalogLang } from '../translations/catalog.ts';
-import type { Child, ChildFreshness } from '../state/children.ts';
+import { deviceDisplayName, type Child, type ChildFreshness } from '../state/children.ts';
 
 export type ChildScreenProps = {
   lang: CatalogLang;
@@ -75,6 +75,8 @@ export const ChildScreen: React.FC<ChildScreenProps> = ({
         {children.map((child) => {
           const selected = child.device.id === selectedId;
           const freshness = child.freshness ?? 'none';
+          // R-M1-26: the serial is never shown whole — only its last four characters identify it.
+          const tail = typeof child.device.uniqueId === 'string' ? child.device.uniqueId.trim().slice(-4) : '';
           return (
             <li key={child.device.id}>
               <button
@@ -89,9 +91,7 @@ export const ChildScreen: React.FC<ChildScreenProps> = ({
               >
                 <span className="flex items-center justify-between gap-2">
                   <span className="text-sm font-bold text-white truncate">
-                    {child.device.name && child.device.name.trim() !== ''
-                      ? child.device.name
-                      : t('children.unnamedDevice')}
+                    {deviceDisplayName(child.device, lang)}
                   </span>
                   <span className="flex items-center gap-2 shrink-0">
                     <span className="text-[10px] font-bold text-slate-300 bg-slate-800 border border-slate-700 rounded-full px-2 py-0.5">
@@ -105,9 +105,11 @@ export const ChildScreen: React.FC<ChildScreenProps> = ({
                   </span>
                 </span>
                 <span className="mt-1 block text-xs text-slate-300">{child.label}</span>
-                <span className="mt-1 block text-[10px] font-mono text-slate-500" dir="ltr">
-                  {child.device.uniqueId}
-                </span>
+                {tail !== '' ? (
+                  <span className="mt-1 block text-[10px] font-mono text-slate-500" dir="ltr">
+                    {`…${tail}`}
+                  </span>
+                ) : null}
               </button>
             </li>
           );

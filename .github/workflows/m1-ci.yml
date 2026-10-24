@@ -21,7 +21,7 @@ jobs:
       # Node 22 يطبع TAP عند التوجيه (`# tests`) وNode 24 يطبع spec (`ℹ tests`)، فالمُحلّل يقبل الشكلين.
       - name: Run app tests with a measured count floor
         env:
-          EXPECTED_MIN_TESTS: '182'
+          EXPECTED_MIN_TESTS: '186'
         run: |
           set -o pipefail
           npm run test:app --silent | tee /tmp/app.log

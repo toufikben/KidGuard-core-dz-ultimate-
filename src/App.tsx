@@ -26,6 +26,7 @@ import { useSession } from './state/session.ts';
 import {
   assignGuardian,
   clearChildren,
+  deviceDisplayName,
   guardianSummary,
   listGuardiansFor,
   listServerUsers,
@@ -246,7 +247,16 @@ export default function App() {
 
   // Read the selected child's guardian links + the accounts that could be shared. The ticket makes
   // the last request win, so switching children quickly cannot paint an older child's guardians.
+  // /permissions is admin-only (002 §4): a viewer gets NO request at all and no empty list either.
   const loadGuardians = useCallback(async (deviceId: number) => {
+    if (session.user?.admin !== true) {
+      guardianRequest.current += 1;
+      setGuardians([]);
+      setGuardianCandidates([]);
+      setGuardiansError(null);
+      setGuardiansLoading(false);
+      return;
+    }
     const ticket = ++guardianRequest.current;
     setGuardiansLoading(true);
     setGuardiansError(null);
@@ -270,10 +280,10 @@ export default function App() {
     } finally {
       if (ticket === guardianRequest.current) setGuardiansLoading(false);
     }
-  }, [lang]);
+  }, [lang, session.user?.admin]);
 
   useEffect(() => {
-    if (view !== 'contacts' || selectedChild === null || session.status !== 'signed-in') {
+    if (view !== 'contacts' || selectedChild === null || session.status !== 'signed-in' || session.user?.admin !== true) {
       guardianRequest.current += 1;
       setGuardians([]);
       setGuardianCandidates([]);
@@ -858,7 +868,7 @@ export default function App() {
                     lang={lang}
                     service={zoneService}
                     isAdmin={session.user?.admin === true}
-                    childName={selectedChild.device.name}
+                    childName={deviceDisplayName(selectedChild.device, lang)}
                     childDeviceId={selectedChild.device.id}
                     guardianUserIds={session.user ? [session.user.id] : undefined}
                     onServerZones={setServerZones}

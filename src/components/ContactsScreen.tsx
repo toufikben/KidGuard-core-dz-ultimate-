@@ -7,7 +7,7 @@
 import React from 'react';
 import { Info, RefreshCw, UserMinus, UserPlus, Users } from 'lucide-react';
 import { translate, type CatalogLang } from '../translations/catalog.ts';
-import type { Child } from '../state/children.ts';
+import { deviceDisplayName, pickSelectedChild, type Child } from '../state/children.ts';
 import type { ServerUser } from '../services/traccar/types.ts';
 
 export type ContactsScreenProps = {
@@ -49,7 +49,7 @@ export const ContactsScreen: React.FC<ContactsScreenProps> = ({
   onRefresh,
 }) => {
   const t = (key: string, vars?: Record<string, string | number>) => translate(key, lang, vars);
-  const selectedChild = children.find((child) => child.device.id === selectedId) ?? children[0] ?? null;
+  const selectedChild = pickSelectedChild(children, selectedId);
 
   return (
     <section dir={lang === 'ar' ? 'rtl' : 'ltr'} className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-4">
@@ -61,14 +61,16 @@ export const ContactsScreen: React.FC<ContactsScreenProps> = ({
           </h1>
           <p className="text-[11px] text-slate-400 mt-1">{t('contacts.subtitle')}</p>
         </div>
-        <button
-          type="button"
-          onClick={onRefresh}
-          className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-xs font-bold hover:bg-slate-700"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          {t('children.refresh')}
-        </button>
+        {isAdmin ? (
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-xs font-bold hover:bg-slate-700"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            {t('children.refresh')}
+          </button>
+        ) : null}
       </header>
 
       {error ? (
@@ -77,7 +79,7 @@ export const ContactsScreen: React.FC<ContactsScreenProps> = ({
         </p>
       ) : null}
 
-      {children.length === 0 ? (
+      {!loading && !error && children.length === 0 ? (
         <p className="text-sm text-slate-400 bg-slate-900 border border-slate-800 rounded-2xl px-4 py-6 text-center">
           {t('children.noneShared')}
         </p>
@@ -99,9 +101,7 @@ export const ContactsScreen: React.FC<ContactsScreenProps> = ({
                       : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700'
                   }`}
                 >
-                  {child.device.name && child.device.name.trim() !== ''
-                    ? child.device.name
-                    : t('children.unnamedDevice')}
+                  {deviceDisplayName(child.device, lang)}
                 </button>
               );
             })}
@@ -111,85 +111,89 @@ export const ContactsScreen: React.FC<ContactsScreenProps> = ({
 
       {selectedChild ? (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-          <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
-            <h2 className="text-sm font-bold text-white">{t('contacts.guardians')}</h2>
-            <span className="text-[10px] font-mono text-slate-400">{t('contacts.count', { count: summary.count })}</span>
-          </div>
-
-          {summary.single ? (
-            <p role="status" className="flex items-start gap-2 text-xs text-sky-200 bg-sky-950/40 border border-sky-700/40 rounded-xl px-3 py-2">
-              <Info className="w-4 h-4 shrink-0 text-sky-300" />
-              <span>{t('contacts.singleGuardian')}</span>
-            </p>
-          ) : null}
-
-          {loading ? <p className="text-xs text-slate-400">{t('contacts.loading')}</p> : null}
-
-          {!loading && guardians.length === 0 ? (
-            <p className="text-xs text-slate-400">{t('contacts.none')}</p>
-          ) : null}
-
-          <ul className="space-y-1.5">
-            {guardians.map((guardian) => (
-              <li
-                key={guardian.id}
-                className="flex items-center justify-between gap-3 bg-slate-800/70 border border-slate-700 rounded-xl px-3 py-2"
-              >
-                <span className="min-w-0">
-                  <span className="block text-sm font-bold text-white truncate">{displayName(guardian)}</span>
-                  <span className="block text-[10px] font-mono text-slate-400 truncate" dir="ltr">
-                    {guardian.email}
-                  </span>
-                </span>
-                {isAdmin ? (
-                  <button
-                    type="button"
-                    onClick={() => onUnassign(guardian.id)}
-                    className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-2 py-1 hover:bg-red-500/20"
-                  >
-                    <UserMinus className="w-3.5 h-3.5" />
-                    {t('contacts.remove')}
-                  </button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-
+          {/* R-M1-27: /permissions is admin-only, so a viewer gets the honest sentence — never an
+              empty list, a count of 0, or controls that would only fail. */}
           {!isAdmin ? (
             <p className="text-[11px] text-slate-400 bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2">
-              {t('contacts.viewerReadOnly')}
+              {t('contacts.adminOnlyList')}
             </p>
           ) : (
-            <div className="space-y-2 border-t border-slate-800 pt-3">
-              <p className="text-xs font-semibold text-slate-300">{t('contacts.available')}</p>
-              {candidates.length === 0 ? (
-                <p className="text-[11px] text-slate-400">{t('contacts.noCandidates')}</p>
-              ) : (
-                <ul className="space-y-1.5">
-                  {candidates.map((candidate) => (
-                    <li
-                      key={candidate.id}
-                      className="flex items-center justify-between gap-3 bg-slate-800/70 border border-slate-700 rounded-xl px-3 py-2"
-                    >
-                      <span className="min-w-0">
-                        <span className="block text-sm font-bold text-white truncate">{displayName(candidate)}</span>
-                        <span className="block text-[10px] font-mono text-slate-400 truncate" dir="ltr">
-                          {candidate.email}
-                        </span>
+            <>
+              <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                <h2 className="text-sm font-bold text-white">{t('contacts.guardians')}</h2>
+                {!error ? (
+                  <span className="text-[10px] font-mono text-slate-400">{t('contacts.count', { count: summary.count })}</span>
+                ) : null}
+              </div>
+
+              {summary.single ? (
+                <p role="status" className="flex items-start gap-2 text-xs text-sky-200 bg-sky-950/40 border border-sky-700/40 rounded-xl px-3 py-2">
+                  <Info className="w-4 h-4 shrink-0 text-sky-300" />
+                  <span>{t('contacts.singleGuardian')}</span>
+                </p>
+              ) : null}
+
+              {loading ? <p className="text-xs text-slate-400">{t('contacts.loading')}</p> : null}
+
+              {!loading && !error && guardians.length === 0 ? (
+                <p className="text-xs text-slate-400">{t('contacts.none')}</p>
+              ) : null}
+
+              <ul className="space-y-1.5">
+                {guardians.map((guardian) => (
+                  <li
+                    key={guardian.id}
+                    className="flex items-center justify-between gap-3 bg-slate-800/70 border border-slate-700 rounded-xl px-3 py-2"
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-sm font-bold text-white truncate">{displayName(guardian)}</span>
+                      <span className="block text-[10px] font-mono text-slate-400 truncate" dir="ltr">
+                        {guardian.email}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => onAssign(candidate.id)}
-                        className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-2 py-1 hover:bg-emerald-500/20"
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onUnassign(guardian.id)}
+                      className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-2 py-1 hover:bg-red-500/20"
+                    >
+                      <UserMinus className="w-3.5 h-3.5" />
+                      {t('contacts.remove')}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="space-y-2 border-t border-slate-800 pt-3">
+                <p className="text-xs font-semibold text-slate-300">{t('contacts.available')}</p>
+                {candidates.length === 0 ? (
+                  <p className="text-[11px] text-slate-400">{t('contacts.noCandidates')}</p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {candidates.map((candidate) => (
+                      <li
+                        key={candidate.id}
+                        className="flex items-center justify-between gap-3 bg-slate-800/70 border border-slate-700 rounded-xl px-3 py-2"
                       >
-                        <UserPlus className="w-3.5 h-3.5" />
-                        {t('contacts.add')}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+                        <span className="min-w-0">
+                          <span className="block text-sm font-bold text-white truncate">{displayName(candidate)}</span>
+                          <span className="block text-[10px] font-mono text-slate-400 truncate" dir="ltr">
+                            {candidate.email}
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onAssign(candidate.id)}
+                          className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-2 py-1 hover:bg-emerald-500/20"
+                        >
+                          <UserPlus className="w-3.5 h-3.5" />
+                          {t('contacts.add')}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
           )}
         </div>
       ) : null}

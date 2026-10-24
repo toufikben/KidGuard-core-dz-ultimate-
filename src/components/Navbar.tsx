@@ -86,6 +86,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 key={value}
                 onClick={() => onViewChange(value)}
                 aria-pressed={view === value}
+                aria-label={translate(key, lang)}
                 className={`h-7 sm:h-8 flex items-center gap-1 px-2.5 sm:px-3 rounded-md text-xs font-bold transition-all ${
                   view === value
                     ? 'bg-emerald-600 text-white shadow-sm'
@@ -104,6 +105,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={onOpenSettings}
               className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 hover:border-amber-400 flex items-center justify-center transition-all active:scale-95 shadow-md group shrink-0"
               title={t.tabSettings || 'الإعدادات'}
+              aria-label={t.tabSettings || 'الإعدادات'}
             >
               <Settings className="w-4 h-4 text-amber-400 group-hover:rotate-90 transition-transform duration-300" />
             </button>

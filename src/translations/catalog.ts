@@ -282,8 +282,9 @@ export const catalog: Record<string, CatalogEntry> = {
   'children.freshness.none': { ar: 'لا قراءة من الخادم', fr: 'Aucune lecture du serveur', en: 'No reading from the server' },
 
   // The contacts screen. §5.12: a single guardian is a normal configuration — no voting, time-based
-  // escalation — and it never disables the screen. Viewer read-only names the server's own gate; the
-  // real gate is `identity()` inside assignGuardian/unassignGuardian.
+  // escalation — and it never disables the screen. R-M1-27: GET /permissions is admin-only, so a
+  // VIEWER is told the list is administrative instead of being shown an empty list or a count of 0;
+  // the real gate is `identity()` inside assignGuardian/unassignGuardian.
   'contacts.title': { ar: 'الأولياء', fr: 'Tuteurs', en: 'Guardians' },
   'contacts.subtitle': {
     ar: 'من يرى ماذا يقرره الخادم: تصل فقط الأجهزة المشتركة مع هذا الحساب',
@@ -314,10 +315,10 @@ export const catalog: Record<string, CatalogEntry> = {
     fr: 'Un seul tuteur est enregistré pour cet enfant : pas de vote entre tuteurs, l’escalade est temporelle.',
     en: 'One guardian is registered for this child: no guardian vote, escalation is time-based.',
   },
-  'contacts.viewerReadOnly': {
-    ar: 'حسابك لا يملك صلاحية تعديل المشاركة (قراءة فقط)',
-    fr: 'Votre compte ne peut pas modifier les partages (lecture seule)',
-    en: 'Your account cannot change sharing (read-only)',
+  'contacts.adminOnlyList': {
+    ar: 'قائمة الأولياء متاحة لحساب الإدارة فقط.',
+    fr: 'La liste des tuteurs n’est visible que pour un compte administrateur.',
+    en: 'The guardian list is visible to an administrator account only.',
   },
   'contacts.available': { ar: 'حسابات يمكن مشاركتها', fr: 'Comptes pouvant être partagés', en: 'Accounts that can be shared' },
   'contacts.add': { ar: 'مشاركة', fr: 'Partager', en: 'Share' },
