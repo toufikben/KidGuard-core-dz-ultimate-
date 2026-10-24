@@ -92,10 +92,11 @@ function assemble(incident: Incident, nowMs: number, timelineLimit: number, deli
   const speed = speedLine(incident);
   if (speed !== null) lines.push(speed);
   lines.push('', 'التسلسل:');
-  if (timelineLimit === 0) lines.push('… (اقتُطع)');
-  for (const entry of incident.timeline.slice(-timelineLimit)) {
+  const shownTimeline = timelineLimit === 0 ? [] : incident.timeline.slice(-timelineLimit);
+  for (const entry of shownTimeline) {
     lines.push(`${clockOf(entry.at)} — ${ACTION_LABEL[entry.action] ?? entry.action}`);
   }
+  if (shownTimeline.length < incident.timeline.length) lines.push('… (اقتُطع)');
   lines.push('', 'تسلسل التسليم:');
   const shown = Math.min(deliveryLimit, incident.recipients.length);
   for (let index = 0; index < shown; index += 1) lines.push(deliveryLine(incident, index));

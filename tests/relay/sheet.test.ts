@@ -103,6 +103,40 @@ test('sheet: output is bounded at 4000 characters and keeps the footer', () => {
   assert.match(text, /بيانات مختبر/);
 });
 
+test('sheet: truncation is honest — the marker appears exactly when timeline entries are omitted', () => {
+  const partialClock = fakeClock(T0);
+  const partialAudit = createAuditLog({ now: partialClock.now });
+  const partialStore = createIncidentStore({
+    audit: partialAudit, recipients: [{ userId: 1 }, { userId: 2 }], now: partialClock.now,
+  });
+  const partialIncident = partialStore.ingest(forwardPayload({ type: 'alarm', alarm: 'x'.repeat(3_450) }))!;
+  partialClock.advance(1_000);
+  partialStore.delivered(partialIncident.id, 1);
+  partialClock.advance(1_000);
+  partialStore.opened(partialIncident.id, 2);
+  const partial = renderIncidentSheet(partialStore.get(partialIncident.id), partialClock.now());
+  assert.ok(partial.length <= MAX_SHEET_CHARS, `sheet length ${partial.length}`);
+  assert.match(partial, /اقتُطع/);
+  assert.match(partial, /بيانات مختبر/);
+  assert.equal((partial.match(/UTC — /g) ?? []).length, 2);
+
+  const noneClock = fakeClock(T0);
+  const noneAudit = createAuditLog({ now: noneClock.now });
+  const noneStore = createIncidentStore({
+    audit: noneAudit, recipients: [{ userId: 1 }, { userId: 2 }], now: noneClock.now,
+  });
+  const noneIncident = noneStore.ingest(forwardPayload({ type: 'alarm', alarm: 'x'.repeat(3_600) }))!;
+  noneClock.advance(1_000);
+  noneStore.delivered(noneIncident.id, 1);
+  noneClock.advance(1_000);
+  noneStore.opened(noneIncident.id, 2);
+  const none = renderIncidentSheet(noneStore.get(noneIncident.id), noneClock.now());
+  assert.ok(none.length <= MAX_SHEET_CHARS, `sheet length ${none.length}`);
+  assert.match(none, /اقتُطع/);
+  assert.match(none, /بيانات مختبر/);
+  assert.doesNotMatch(none, /UTC — /);
+});
+
 test('sheet: no NaN or undefined reaches the text', () => {
   const clock = fakeClock(T0);
   const audit = createAuditLog({ now: clock.now });
