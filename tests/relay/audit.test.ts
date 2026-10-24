@@ -19,11 +19,25 @@ test('audit: sanitize drops secret-shaped keys at every depth and bounds long st
   const out = sanitize({
     ok: 'visible',
     password: 'sup3rs3cret',
+    assigneeUserId: 2,
+    deviceSerialLast4: 'HMS8',
+    signedAt: '2026-10-24T00:00:00.000Z',
+    designation: 'lead',
+    deviceToken: 't0k',
+    emailAddress: 'a@b.c',
+    signature: 'sig',
     nested: { authorization: 'Bearer abc', token: 't0k', email: 'a@b.c', keep: 'yes' },
     long: 'x'.repeat(500),
   }) as Record<string, unknown>;
   assert.equal(out.ok, 'visible');
   assert.equal(out.password, undefined);
+  assert.equal(out.assigneeUserId, 2);
+  assert.equal(out.deviceSerialLast4, 'HMS8');
+  assert.equal(out.signedAt, '2026-10-24T00:00:00.000Z');
+  assert.equal(out.designation, 'lead');
+  assert.equal(out.deviceToken, undefined);
+  assert.equal(out.emailAddress, undefined);
+  assert.equal(out.signature, undefined);
   const nested = out.nested as Record<string, unknown>;
   assert.equal(nested.authorization, undefined);
   assert.equal(nested.token, undefined);
@@ -38,6 +52,10 @@ test('audit: a circular object is recorded as a marker instead of throwing', () 
   const out = sanitize(value) as Record<string, unknown>;
   assert.equal(out.name, 'loop');
   assert.equal(out.self, '[circular]');
+  const shared = { x: 1 };
+  const copies = sanitize({ a: shared, b: shared }) as Record<string, unknown>;
+  assert.deepEqual(copies.a, { x: 1 });
+  assert.deepEqual(copies.b, { x: 1 });
   const log = createAuditLog();
   assert.doesNotThrow(() => log.record('internal_error', { value }));
 });

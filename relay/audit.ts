@@ -8,7 +8,23 @@ export type AuditAction =
 
 export type AuditEntry = { seq: number; at: string; action: AuditAction; data: Record<string, unknown> };
 
-const SECRET_KEY = /pass(word)?|secret|token|cookie|authorization|sign|email/i;
+// Keys are matched as whole words after splitting camelCase. A substring rule silently dropped
+// `assigneeUserId` and `deviceSerialLast4` (both contain "sign"/"serial"), which would have erased
+// the assignee from the AC-4 audit trail. The one safe serial form, a trailing `Last4`, is kept.
+const SECRET_WORDS = new Set([
+  'password', 'passwd', 'pass', 'secret', 'token', 'cookie',
+  'authorization', 'signature', 'sign', 'email', 'serial',
+]);
+
+function isSecretKey(key: string): boolean {
+  const words = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word !== '');
+  if (words[words.length - 1] === 'last4') return false;
+  return words.some((word) => SECRET_WORDS.has(word));
+}
 const MAX_STRING = 200;
 const MAX_DEPTH = 6;
 const MAX_ARRAY = 50;
@@ -24,13 +40,18 @@ export function sanitize(value: unknown, depth = 0, seen = new WeakSet<object>()
   }
   if (seen.has(value)) return '[circular]';
   seen.add(value);
-  if (Array.isArray(value)) return value.slice(0, MAX_ARRAY).map((item) => sanitize(item, depth + 1, seen));
-  const out: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value)) {
-    if (SECRET_KEY.test(key)) continue;
-    out[key] = sanitize(item, depth + 1, seen);
+  try {
+    if (Array.isArray(value)) return value.slice(0, MAX_ARRAY).map((item) => sanitize(item, depth + 1, seen));
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) {
+      if (isSecretKey(key)) continue;
+      out[key] = sanitize(item, depth + 1, seen);
+    }
+    return out;
+  } finally {
+    // Ancestors only: a shared acyclic object must be copied twice, not mislabeled `[circular]`.
+    seen.delete(value);
   }
-  return out;
 }
 
 export function createAuditLog({
