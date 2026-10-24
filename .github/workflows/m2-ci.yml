@@ -1,0 +1,49 @@
+name: m2
+on:
+  push:
+    branches: ['m2/**']
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+      - name: Type-check
+        run: npm run lint
+      - name: Build the web bundle
+        run: npm run build
+      # `tests 0` exits 0, so a numeric floor is the only guard. The relay floor is read by
+      # tests/core.test.ts from THIS file (marker below) and raised in the same commit that adds tests.
+      # Node 22 prints `# tests`, Node 24 prints `ℹ tests`; accept both.
+      - name: Run relay tests with a measured count floor
+        env:
+          EXPECTED_MIN_TESTS: '10'
+        run: |
+          set -o pipefail
+          npm run test:relay --silent | tee /tmp/relay.log
+          n=$(grep -E '^(#|ℹ) tests ' /tmp/relay.log | awk '{print $3}')
+          echo "detected tests=$n (floor $EXPECTED_MIN_TESTS)"
+          awk -v n="$n" -v f="$EXPECTED_MIN_TESTS" 'BEGIN { exit (n+0 >= f+0) ? 0 : 1 }'
+      - name: Run app tests with a measured count floor
+        env:
+          EXPECTED_MIN_TESTS: '229'
+        run: |
+          set -o pipefail
+          npm run test:app --silent | tee /tmp/app.log
+          n=$(grep -E '^(#|ℹ) tests ' /tmp/app.log | awk '{print $3}')
+          echo "detected tests=$n (floor $EXPECTED_MIN_TESTS)"
+          awk -v n="$n" -v f="$EXPECTED_MIN_TESTS" 'BEGIN { exit (n+0 >= f+0) ? 0 : 1 }'
+      - name: Lab suite must not regress
+        env:
+          EXPECTED_MIN_TESTS: '97'
+        run: |
+          set -o pipefail
+          npm run test:lab --silent | tee /tmp/lab.log
+          n=$(grep -E '^(#|ℹ) tests ' /tmp/lab.log | awk '{print $3}')
+          awk -v n="$n" -v f="$EXPECTED_MIN_TESTS" 'BEGIN { exit (n+0 >= f+0) ? 0 : 1 }'
+      - name: Lab configuration renders and validates
+        run: npm run lab:check

@@ -298,4 +298,18 @@ console.log(`app floor check: tests ${counted[1]} >= ${floor}, fail ${failed[1]}
 assert(Number(counted[1]) >= floor, `app tests de-collected or shrank: ${counted[1]} < ${floor}`);
 assert(Number(failed[1]) === 0, `app runner reports ${failed[1]} failures`);
 
+// M2 relay floor, same lesson as the app floor above: `tests 0` would exit 0, so the count is the
+// guard. The number lives only in m2-ci.yml and is read from its marker, never copied here.
+const m2Workflow = readFileSync(new URL('../.github/workflows/m2-ci.yml', import.meta.url), 'utf8');
+const relayFloorMatch = m2Workflow.match(/Run relay tests with a measured count floor[\s\S]*?EXPECTED_MIN_TESTS: '(\d+)'/);
+assert(relayFloorMatch !== null, 'm2-ci.yml lost the relay count floor step');
+const relayFloor = Number(relayFloorMatch![1]);
+const relayRun = spawnSync('npm', ['run', 'test:relay', '--silent'], { encoding: 'utf8', shell: true });
+const relayCounted = /ℹ tests (\d+)/.exec(relayRun.stdout) ?? /# tests (\d+)/.exec(relayRun.stdout);
+const relayFailed = /ℹ fail (\d+)/.exec(relayRun.stdout) ?? /# fail (\d+)/.exec(relayRun.stdout);
+assert(relayCounted !== null && relayFailed !== null, `relay runner printed no summary: ${relayRun.stdout.slice(-400)}`);
+console.log(`relay floor check: tests ${relayCounted[1]} >= ${relayFloor}, fail ${relayFailed[1]}`);
+assert(Number(relayCounted[1]) >= relayFloor, `relay tests de-collected or shrank: ${relayCounted[1]} < ${relayFloor}`);
+assert(Number(relayFailed[1]) === 0, `relay runner reports ${relayFailed[1]} failures`);
+
 console.log('core unit tests passed');
