@@ -681,10 +681,11 @@ test('incidents: a delivery while current extends the deadline from the delivery
 
 test('incidents: a tick before the deadline changes nothing', () => {
   const { store, clock, audit } = setup();
-  store.ingest(forwardPayload());
+  const incident = store.ingest(forwardPayload())!;
   clock.advance(WINDOW - 1);
   store.tick();
   assert.equal(audit.entries().filter((entry) => entry.action === 'window_expired').length, 0);
+  assert.equal(store.get(incident.id).deadlineAt, new Date(T0 + WINDOW).toISOString());
 });
 
 test('incidents: expiry escalates to the next recipient with a fresh window and a sequence log', () => {
@@ -728,6 +729,9 @@ test('incidents: any recipient may ack; the ack assigns, stops the ladder, close
   assert.equal(result.incident.state, 'assigned');
   assert.equal(result.incident.tier, 'P1');
   assert.equal(result.incident.deadlineAt, null);
+  const ackEntry = audit.entries().find((entry) => entry.action === 'ack')!;
+  assert.equal(ackEntry.data.assigneeUserId, 2);
+  assert.equal(ackEntry.data.afterDegraded, false);
   clock.advance(10 * WINDOW);
   store.tick();
   assert.equal(actions(audit).filter((action) => action === 'window_expired').length, 0);
@@ -779,6 +783,7 @@ test('incidents: silence degradation clears the assignee, jumps to the last cont
   assert.equal(after.assigneeUserId, null);
   assert.equal(after.currentRecipientUserId, 2);
   assert.equal(after.deadlineAt, null);
+  assert.equal(after.atEnd, true);
   assert.equal(actions(audit).filter((action) => action === 'degraded').length, 1);
   const escalation = audit.entries().find((entry) => entry.action === 'escalation')!;
   assert.equal(escalation.data.reason, 'silence');
