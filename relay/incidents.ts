@@ -5,6 +5,7 @@
 // open incident and clears its assignee. All time is injected; the server drives `tick`.
 import { type AuditLog } from './audit.ts';
 import { RelayError } from './errors.ts';
+import { renderIncidentSheet } from './sheet.ts';
 import { alarmName, forwardTier } from './tiers.ts';
 import type {
   Delivery, ForwardPayload, Incident, IncidentTimelineEntry, IncidentPosition,
@@ -282,6 +283,10 @@ export function createIncidentStore({
 
     get(id: string): Incident {
       return structuredClone(find(id));
+    },
+
+    sheet(id: string, at: number = now()): string {
+      return renderIncidentSheet(find(id), at);
     },
 
     list(): Incident[] {
