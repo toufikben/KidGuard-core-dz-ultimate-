@@ -64,7 +64,6 @@ export interface AlertPolicyConfig {
   smsEnabled: boolean;
   batterySmsEnabled?: boolean;
   batteryAlertThreshold?: number;
-  testModeEnabled?: boolean;
   parentPhone: string;
   childName: string;
   parentPinHash?: string; // SHA-256 hash; the raw PIN is never persisted

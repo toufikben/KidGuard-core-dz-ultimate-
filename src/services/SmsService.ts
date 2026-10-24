@@ -16,7 +16,7 @@ export interface SmsDispatchResult {
   body: string;
   timestamp: number;
   error?: string;
-  method?: 'direct_sms' | 'sms_link' | 'simulated';
+  method?: 'direct_sms' | 'sms_link';
 }
 
 export type SmsSendMode = 'AUTO' | 'CONFIRM';
@@ -127,7 +127,6 @@ export class SmsService {
       body,
       timestamp: Date.now(),
       error: 'تعذر فتح تطبيق الرسائل على هذا الجهاز',
-      method: 'simulated',
     });
   }
 
@@ -150,7 +149,6 @@ export class SmsService {
         body,
         timestamp: Date.now(),
         error: 'رقم هاتف الوالد غير مكوّن',
-        method: 'simulated',
       };
     }
 

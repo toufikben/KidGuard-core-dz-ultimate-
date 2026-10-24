@@ -64,8 +64,4 @@ export class BatteryEngine {
       };
     }
   }
-
-  public setMockBatteryLevel(level: number): void {
-    this.currentLevel = Math.max(0, Math.min(100, level));
-  }
 }

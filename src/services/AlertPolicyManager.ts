@@ -32,7 +32,6 @@ export class AlertPolicyManager {
     smsEnabled: true,
     batterySmsEnabled: true,
     batteryAlertThreshold: 15,
-    testModeEnabled: false,
     parentPhone: '',
     childName: 'طفل / Child',
     parentPinHash: '',

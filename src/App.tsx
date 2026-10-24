@@ -104,7 +104,7 @@ export default function App() {
     isMockLocation: false,
   });
 
-  const [safeZones, setSafeZones] = useState<SafeZone[]>([]);
+  const [safeZones] = useState<SafeZone[]>([]);
 
   // The session store (Task 6) is the only thing that can hand App a server client. `activeClient()`
   // returns the SAME signed-in client `signIn` built, or null when nobody is signed in — and a null
@@ -141,7 +141,6 @@ export default function App() {
   );
   const [isSirenActive, setIsSirenActive] = useState(false);
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
-  const [isSimulatingOutside, setIsSimulatingOutside] = useState(false);
   const [parentActiveTab, setParentActiveTab] = useState<
     'map' | 'zones' | 'alerts' | 'health' | 'settings' | 'pairing'
   >('map');
@@ -467,12 +466,10 @@ export default function App() {
 
     const handleLocation = (realLoc: LocationPoint) => {
       setGeoError(null);
-      if (!isSimulatingOutside) {
-        protectionState.recordLocation(realLoc, Capacitor.isNativePlatform() ? 'BACKGROUND_GPS' : 'LIVE_GPS');
-        setLastKnownLocation(protectionState.getLastKnownLocation());
-        setLocation(realLoc);
-        runEvaluation(realLoc, safeZones);
-      }
+      protectionState.recordLocation(realLoc, Capacitor.isNativePlatform() ? 'BACKGROUND_GPS' : 'LIVE_GPS');
+      setLastKnownLocation(protectionState.getLastKnownLocation());
+      setLocation(realLoc);
+      runEvaluation(realLoc, safeZones);
     };
 
     const startTracking = async () => {
@@ -573,7 +570,7 @@ export default function App() {
       }
       appStateHandle?.remove();
     };
-  }, [isSimulatingOutside, safeZones, runEvaluation, lang, locationPermissionReady]);
+  }, [safeZones, runEvaluation, lang, locationPermissionReady]);
 
   useEffect(() => {
     const checkDeviceHealth = () => {
@@ -776,47 +773,6 @@ export default function App() {
             {isBgTracking ? '📡 تتبع خلفي نشط' : '📡 تتبع خلفي متوقف'}
           </div>
         )}
-
-        {/* Simulation banner */}
-        <div className="bg-slate-900/90 border-b border-slate-800 py-2 px-4 text-center text-xs text-slate-400 flex items-center justify-center gap-4 flex-wrap">
-          <span className="font-semibold text-slate-300">
-            اختبار ومحاكاة الخروج من المنطقة الآمنة:
-          </span>
-          <button
-            onClick={() => {
-              const next = !isSimulatingOutside;
-              const szLat = safeZones[0]?.latitude;
-              const szLng = safeZones[0]?.longitude;
-              const baseLat =
-                typeof szLat === 'number' && Number.isFinite(szLat) ? szLat : 36.7538;
-              const baseLng =
-                typeof szLng === 'number' && Number.isFinite(szLng) ? szLng : 3.0588;
-
-              setIsSimulatingOutside(next);
-              GeofenceMonitor.getInstance().resetState();
-              RiskEngine.getInstance().resetEngine();
-
-              const simulatedLoc = {
-                ...location,
-                latitude: next ? baseLat + 0.025 : baseLat,
-                longitude: next ? baseLng + 0.025 : baseLng,
-                speed: next ? 4 : 0,
-                timestamp: Date.now(),
-              };
-              setLocation(simulatedLoc);
-              runEvaluation(simulatedLoc, safeZones);
-            }}
-            className={`px-3 py-1 rounded-full text-xs font-bold transition-all border ${
-              isSimulatingOutside
-                ? 'bg-red-500/20 text-red-300 border-red-500/40 shadow-sm'
-                : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-            }`}
-          >
-            {isSimulatingOutside
-              ? 'إيقاف المحاكاة وإعادة الطفل للمنطقة'
-              : 'محاكاة: الطفل داخل المنطقة الآمنة'}
-          </button>
-        </div>
 
         {view === 'dashboard' && (
           <ParentDashboard
