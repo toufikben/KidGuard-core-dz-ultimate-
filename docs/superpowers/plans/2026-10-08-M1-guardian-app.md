@@ -1137,7 +1137,7 @@ npm run lab:scenario -- school-exit --speed=1
 
 **إن لم يكن `web` ضمن `notificators` فالسيناريو لن يولّد إطار حدث على المقبض، ونتيجة AC-3 تكون NOT RUN لا فشلاً في التطبيق** (R-M1-10؛ مقيس في 007 §5.1، ويُعاد ضمانه في Task 8).
 
-المتوقع: سطر حدث واحد عند **وليَّين**، بوصول مستقلّين (لا انتظار فشل قناة للأخرى، §5 بند 1)، وزمن وصول كل منهما مكتوب في `009-m1-ac3-web-fanout.md`. والبريد/تيليجرام في الأثر نفسه: **NOT RUN — بانتظار أسرار المالك (R37)**. لا `Email sent / To:` كدليل تسليم (الحارس `mail.debug=true` ثابت بـ`lab/scripts/check-config.mjs`).
+المتوقع: سطر حدث واحد عند **وليَّين**، بوصول مستقلّين (لا انتظار فشل قناة للأخرى، §5 بند 1)، وزمن وصول كل منهما مكتوب في `010-m1-ac3-web-fanout.md`. والبريد/تيليجرام في الأثر نفسه: **NOT RUN — بانتظار أسرار المالك (R37)**. لا `Email sent / To:` كدليل تسليم (الحارس `mail.debug=true` ثابت بـ`lab/scripts/check-config.mjs`).
 - [ ] **Step 5: ادفع** (`feat(m1): alerts and log read from server events, live socket with announced fallback`).
 
 ---
@@ -1167,7 +1167,7 @@ npm run lab:scenario -- school-exit --speed=1
 "$ADB" reverse --remove-all ; "$ADB" reverse --list    # المتوقع: فارغ
 ```
 
-لقطات قبل/بعد لكل شاشة في `lab/artifacts/` (بلا رفع، MD5 في الأثر `010-m1-phone-check.md`)؛ لا رقم تسلسل كامل؛ لا اسم طفل حقيقي.
+لقطات قبل/بعد لكل شاشة في `lab/artifacts/` (بلا رفع، MD5 في الأثر `011-m1-phone-check.md`)؛ لا رقم تسلسل كامل؛ لا اسم طفل حقيقي.
 - [ ] **Step 6: ادفع** (`refactor(m1)!: delete spec 1.5 layers — role model, localStorage-as-record, stub server, simulation switches`).
 
 ---
@@ -1175,8 +1175,9 @@ npm run lab:scenario -- school-exit --speed=1
 ## Task 12: بوابة M1 — AC-1..AC-3 مقاسة، وتقرير، وتنظيف
 
 **Files:**
-- Create: `tools/m1/ac1-transport.mjs`, `lab/report/M1-REPORT.md`, `lab/report/evidence/009-m1-ac3-web-fanout.md`, `lab/report/evidence/010-m1-phone-check.md`, `lab/report/evidence/011-m1-ac1-transport.md`
+- Create: `tools/m1/ac1-transport.mjs`, `tools/m1/ac2-live.mjs`, `tools/m1/ac3-fanout.mjs`, `tools/m1/ac3-guardian.mjs`, `lab/report/M1-REPORT.md`, `lab/report/evidence/010-m1-ac3-web-fanout.md`, `lab/report/evidence/011-m1-phone-check.md`, `lab/report/evidence/012-m1-ac1-transport.md`
 - Modify: `docs/superpowers/plans/2026-10-05-roadmap.md` (صف M1)، `lab/README.md`
+- **الترقيم (R-M1-44):** الأسماء أعلاه أُزيحت واحداً لأن `009` محجوز بـ`009-m1-ac2-zone-on-server.md` (Task 8): AC-3 ⇒ **010**، فحص الهاتف ⇒ **011**، AC-1 ⇒ **012**. وما كان `010-m1-phone-check.md` في Task 11 Step 5 صار `011`. الأداة `ac1-transport` بقيت باسمها في الخطة، و`ac2-live`/`ac3-*` أُضيفت لتكون أدلة AC-2/AC-3 قابلة لإعادة التشغيل من المستودع لا من مساحة عمل مهملة.
 
 **Interfaces:**
 - Consumes: كل ما سبق + نفق الهاتف (R35).

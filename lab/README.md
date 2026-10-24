@@ -255,3 +255,31 @@ Basic **بالنظام** (المسار `@PermitAll` ويطلب توكن أو ج�
 **التنظيف:** تسحب الأداة توكنها بنفسها في آخرها (`POST /api/session/token/revoke`→204) فلا يبقى رمزٌ
 يعمر بعدها؛ لا شيء على القرص يُزال (`fanout.env` يبقى وهو مُتجاهَل، و`lab-data/` لا تُمَسّ، والخادم
 لا يُعاد إقلاعه ولا يُطفأ). الحالة البيئية لا تستمرّ بين الصدفات فلا حاجة إلى `unset`.
+
+## M1 — بوابة القبول: AC-1..AC-3 (2026-10-24)
+
+ثلاثة أوامر، كلها تقرأ الأسرار من `lab/traccar/fanout.env` ولا تطبع شيئاً منها، وكلها تحتاج الخادم
+قائماً (`lab/traccar/run.sh`) والنفق مفتوحاً (`adb reverse tcp:5055 tcp:5055`):
+
+```bash
+set -a; source lab/traccar/fanout.env; set +a
+
+# AC-1: عشر حقنات من الهاتف؛ قياس fixTime -> ظهوره في /positions عبر عميل التطبيق
+LAB_API_URL=http://127.0.0.1:8082/api node tools/m1/ac1-transport.mjs --device=lab-child-1 --samples=10
+
+# AC-2: منطقة تُحفظ على الخادم ثم تُقرأ؛ spy على localStorage (صفر قراءة/كتابة) وحذف تلقائي
+node tools/m1/ac2-live.mjs
+
+# AC-3: وليّان بجلستين مستقلتين يستقبلان geofenceExit نفسه؛ الحقن من الهاتف
+node tools/m1/ac3-fanout.mjs --device=lab-child-1
+```
+
+- **AC-1 نقليّ:** المصدر **مُحقَن يدوياً** (R35/R37)، والمقياس `fixTime → /positions` لا `source→sink`.
+  غياب أي دفعة يطبع `NO DATA`، لا `PASS`.
+- **AC-3 على قناة `web` وحدها:** البريد/تيليجرام **NOT RUN**. `guardian-a` هو حساب المدير و`guardian-b`
+  هو الولي الثاني؛ كلٌّ يسجّل وصوله بطابعه الزمني (لا انتظار لفشل قناة الآخر). NDJSON الخام يُكتب تحت
+  `lab/logs/ac3-fanout-*/` (غير متتبَّع).
+- **التنظيف بعد أي جولة:** `"$ADB" reverse --remove-all` (ثم `--list` فارغ)، وإيقاف الخادم، ثم
+  `netstat -ano | grep -E ':(8082|5055|5199|3000)' | grep LISTENING || echo "ALL LAB PORTS CLOSED"`.
+- **الأدلة:** `lab/report/M1-REPORT.md` و`lab/report/evidence/012` (AC-1) و`010` (AC-3) و`011`
+  (فحص الهاتف — NOT RUN).
