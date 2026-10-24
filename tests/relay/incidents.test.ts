@@ -239,7 +239,10 @@ test('incidents: a late receipt after the ladder ended cannot reopen a window', 
   deliveredRun.clock.advance(WINDOW);
   deliveredRun.store.tick();
   deliveredRun.clock.advance(5_000);
-  assert.equal(deliveredRun.store.delivered(deliveredIncident.id, 2).deadlineAt, null);
+  const lateDelivery = deliveredRun.store.delivered(deliveredIncident.id, 2);
+  assert.equal(lateDelivery.deadlineAt, null);
+  assert.equal(lateDelivery.deliveries[1].state, 'delivered');
+  assert.ok(deliveredRun.audit.entries().some((entry) => entry.action === 'delivered' && entry.data.userId === 2));
 
   const openedRun = setup();
   const openedIncident = openedRun.store.ingest(forwardPayload())!;
@@ -248,7 +251,10 @@ test('incidents: a late receipt after the ladder ended cannot reopen a window', 
   openedRun.clock.advance(WINDOW);
   openedRun.store.tick();
   openedRun.clock.advance(5_000);
-  assert.equal(openedRun.store.opened(openedIncident.id, 2).deadlineAt, null);
+  const lateOpen = openedRun.store.opened(openedIncident.id, 2);
+  assert.equal(lateOpen.deadlineAt, null);
+  assert.equal(lateOpen.deliveries[1].state, 'opened');
+  assert.ok(openedRun.audit.entries().some((entry) => entry.action === 'opened' && entry.data.userId === 2));
 
   for (const run of [deliveredRun, openedRun]) {
     run.clock.advance(10 * WINDOW);
