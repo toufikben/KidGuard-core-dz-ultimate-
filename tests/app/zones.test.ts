@@ -527,8 +527,12 @@ test('MapView (circle by drag) — WIRING GUARD: Pointer Events, capture and cli
   // stay active forever and the next tap would be rejected as "already dragging".
   assert.ok(src.includes("document.addEventListener('pointerup', finish)"),
     'a release outside the container must finish the drag even without capture');
+  assert.ok(src.includes("document.addEventListener('pointercancel', cancel)"),
+    'a cancelled gesture outside the container must end too, not hang');
   assert.ok(src.includes("document.removeEventListener('pointerup', finish)"),
     'the document-level fallback must be removed when the tool is unarmed');
+  assert.ok(src.includes("document.removeEventListener('pointercancel', cancel)"),
+    'the cancel fallback must be removed with its add — no listener survives unarming');
   assert.match(src, /closest\('\.leaflet-control-container'\)/,
     'starting a drag on a zoom button must not draw a circle');
   assert.match(src, /pointerType === 'mouse'[\s\S]{0,80}button !== 0/,
