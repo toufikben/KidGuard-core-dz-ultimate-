@@ -10,8 +10,6 @@ export const translations = {
   ar: {
     appName: 'كيدغارد بوست المطور - KidGuard Core DZ Pro',
     tagline: 'نظام حماية الطفل وتحديد الموقع الذكي الجغرافي',
-    roleParent: 'جهاز الوالد (مراقبة)',
-    roleChild: 'جهاز الطفل (تتبع)',
     
     // States
     SAFE: 'آمن في المنطقة',
@@ -115,8 +113,6 @@ export const translations = {
   en: {
     appName: 'KidGuard Core DZ Pro',
     tagline: 'Smart Geofencing & Child Safety Protection System',
-    roleParent: 'Parent Device (Monitoring)',
-    roleChild: 'Child Device (Tracking)',
 
     SAFE: 'Safe Inside Safe Zone',
     OUTSIDE_ZONE: 'Outside Safe Zone',
@@ -208,8 +204,6 @@ export const translations = {
   fr: {
     appName: 'KidGuard Core DZ Pro',
     tagline: 'Système de Sécurité et Géofencing Intelligents pour Enfants',
-    roleParent: 'Appareil Parent (Surveillance)',
-    roleChild: 'Appareil Enfant (Suivi)',
 
     SAFE: 'En sécurité dans la zone',
     OUTSIDE_ZONE: 'Hors de la zone de sécurité',

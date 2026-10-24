@@ -8,7 +8,6 @@ import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { App as CapApp } from '@capacitor/app';
 import {
-  DeviceRole,
   LocationPoint,
   SafeZone,
   LoggedAlert,
@@ -58,7 +57,6 @@ import { SmsService } from './services/SmsService';
 import { verifyPin } from './services/SecurityUtils';
 import { ProtectionStateService } from './services/ProtectionStateService';
 
-const ROLE_KEY = 'kidguard_role';
 const LANG_KEY = 'kidguard_lang';
 
 // One honest line per guardian-link failure. A refused write is named as a refusal (the same words
@@ -72,20 +70,11 @@ function guardianFailureLine(error: unknown, lang: Language, fallbackKey: string
   return translate(fallbackKey, lang);
 }
 
-// AC-2 (Task 8): the zone record lives on the SERVER (GET/POST /api/geofences via zones.ts), so the
-// old `kidguard_safe_zones` localStorage key is GONE — there is nothing here to load and nothing to
-// save. The `safeZones` state below is only the legacy in-memory prototype loop that the child-role
-// RiskEngine still consumes until Task 11 removes that branch; it is never persisted.
+// AC-2 (Task 8): the zone record lives on the SERVER (GET/POST /api/geofences via zones.ts). There
+// is nothing here to load and nothing to save: the `safeZones` state below is only the empty
+// in-memory input the GeofenceMonitor/RiskEngine loop consumes (R-M1-40), and it is never persisted.
 
 export default function App() {
-  const [role, setRole] = useState<DeviceRole>(() => {
-    try {
-      return (localStorage.getItem(ROLE_KEY) as DeviceRole) || 'PARENT';
-    } catch {
-      return 'PARENT';
-    }
-  });
-
   const [lang, setLang] = useState<Language>(() => {
     try {
       // The stored value is whatever a previous run wrote, so it is checked, not cast: an unknown
@@ -99,8 +88,8 @@ export default function App() {
 
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark');
 
-  // R-M1-23 / R-M1-29: the guardian shell has four VIEWS, not two roles. App always renders this
-  // shell; the stored `kidguard_role` still exists for Task 11 but no render branch reads it any more.
+  // R-M1-23 / R-M1-29: the guardian shell has four VIEWS. App always renders this shell; no stored
+  // role decides what is drawn.
   const [view, setView] = useState<'dashboard' | 'children' | 'contacts' | 'alerts'>('dashboard');
   const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
 
@@ -188,15 +177,7 @@ export default function App() {
     healthMonitor.getHealthDiagnostics(location)
   );
 
-  // Persist role & language
-  useEffect(() => {
-    try {
-      localStorage.setItem(ROLE_KEY, role);
-    } catch {
-      // ignore
-    }
-  }, [role]);
-
+  // Persist language — the only local record App still writes.
   useEffect(() => {
     try {
       localStorage.setItem(LANG_KEY, lang);
@@ -613,10 +594,9 @@ export default function App() {
   // v1.3 build put at 36.7538/3.0588. The legacy `location` state is the ADULT's own geolocation —
   // feeding it to the child's map is the exact confusion that audit measured.
 
-  // AC-2: zone records are the SERVER's. There is no local save: the old `saveSafeZones` helper and
-  // its `kidguard_safe_zones` key were removed, and the zones tab renders ZonesScreen (below), which
-  // reads back from `GET /geofences` after every write. `safeZones` remains only as the in-memory
-  // prototype list the child-role RiskEngine consumes until Task 11 removes that branch.
+  // AC-2: zone records are the SERVER's. There is no local save: the zones tab renders ZonesScreen
+  // (below), which reads back from `GET /geofences` after every write. `safeZones` remains only as
+  // the empty in-memory input the GeofenceMonitor/RiskEngine loop consumes (R-M1-40).
 
   const handleUpdateAlertPolicy = (newConfig: Partial<typeof alertPolicy>) => {
     alertPolicyManager.updateConfig(newConfig);
@@ -706,21 +686,6 @@ export default function App() {
     }
   };
 
-  const handleRoleChange = async (nextRole: DeviceRole) => {
-    if (nextRole === role) return;
-    if (nextRole === 'PARENT' && alertPolicy.parentPinHash && !pinUnlocked) {
-      const entered = window.prompt(
-        lang === 'ar' ? 'أدخل رمز PIN الخاص بالوالد:' : lang === 'fr' ? 'Entrez le code PIN parent :' : 'Enter parent PIN:'
-      );
-      if (!entered || !(await verifyPin(entered, alertPolicy.parentPinHash))) {
-        window.alert(lang === 'ar' ? 'رمز PIN غير صحيح' : lang === 'fr' ? 'Code PIN incorrect' : 'Incorrect PIN');
-        return;
-      }
-      setPinUnlocked(true);
-    }
-    setRole(nextRole);
-  };
-
   // PIN-protected open settings
   const handleOpenSettings = async () => {
     if (alertPolicy.parentPinHash && !pinUnlocked) {
@@ -795,7 +760,6 @@ export default function App() {
         alertPolicy={alertPolicy}
         onUpdateAlertPolicy={handleUpdateAlertPolicy}
         healthStatus={healthStatus}
-        role={role}
       />
 
       <main className="pb-0 sm:pb-6">

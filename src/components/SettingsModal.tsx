@@ -25,7 +25,7 @@ import {
   Send,
   Loader2,
 } from 'lucide-react';
-import { AlertPolicyConfig, HealthStatus, DeviceRole } from '../types';
+import { AlertPolicyConfig, HealthStatus } from '../types';
 import { Language, translations } from '../translations';
 import { hashPin } from '../services/SecurityUtils';
 import { privacyDataService } from '../services/PrivacyDataService';
@@ -42,7 +42,6 @@ interface SettingsModalProps {
   alertPolicy: AlertPolicyConfig;
   onUpdateAlertPolicy: (newConfig: Partial<AlertPolicyConfig>) => void;
   healthStatus?: HealthStatus;
-  role: DeviceRole;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -55,7 +54,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   alertPolicy,
   onUpdateAlertPolicy,
   healthStatus,
-  role,
 }) => {
   if (!isOpen) return null;
 

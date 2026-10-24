@@ -3,9 +3,8 @@ import { Shield, Baby, LayoutDashboard, Users, Settings, TriangleAlert } from 'l
 import { Language, translations } from '../translations';
 import { translate } from '../translations/catalog.ts';
 
-// R-M1-23 / R-M1-29: the four guardian views. This is navigation, not a role: the PARENT/CHILD
-// switcher is gone from the bar, and App always renders the guardian shell. The role model itself
-// stays for Task 11 and no branch here reads it. `alerts` is the Task 10 log — a view like any other,
+// R-M1-23 / R-M1-29: the four guardian views. This is navigation: App always renders the guardian
+// shell and no branch here reads a device role. `alerts` is the Task 10 log — a view like any other,
 // not a bell and not a notification channel.
 export type GuardianView = 'dashboard' | 'children' | 'contacts' | 'alerts';
 

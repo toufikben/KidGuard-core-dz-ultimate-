@@ -1,5 +1,3 @@
-export type DeviceRole = 'PARENT' | 'CHILD';
-
 export type KidState =
   | 'SAFE'
   | 'OUTSIDE_ZONE'
