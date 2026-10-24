@@ -31,7 +31,7 @@ const DEFAULT_TOKEN_LIFETIME_MS = 60 * 60 * 1000;
 // repeats a server's noise as fact).
 const MAX_SERVER_VERSION_LENGTH = 64;
 
-type ActiveSession = { client: TraccarClient; user: ServerUser; token: string | null };
+type ActiveSession = { client: TraccarClient; user: ServerUser; token: string | null; baseUrl: string };
 
 // The one in-memory session record — the only session state this app keeps.
 let active: ActiveSession | null = null;
@@ -50,6 +50,13 @@ export function currentUser(): ServerUser | null {
 // there is no client and it returns null rather than a client pointed at nothing.
 export function activeClient(): TraccarClient | null {
   return active?.client ?? null;
+}
+
+// The address of the signed-in server, exactly as `signIn` received it. Task 10's live socket needs
+// it to build its own URL; nothing else is exposed — no token, no credential, no derived address — so
+// a screen can hand this to connectLive() without learning a secret. Null when nobody is signed in.
+export function activeServerBaseUrl(): string | null {
+  return active?.baseUrl ?? null;
 }
 
 // Drops the local record without asking the server anything. This is the recovery path the state
@@ -94,7 +101,7 @@ export function signIn({
   if (code !== undefined) form.code = code;
   return client.postForm<unknown>('/session', form).then((raw) => {
     const user = toServerUser(raw);
-    active = { client, user, token: null };
+    active = { client, user, token: null, baseUrl };
     return user;
   });
 }
