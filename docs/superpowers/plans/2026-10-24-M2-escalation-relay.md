@@ -2057,7 +2057,7 @@ export type RelayServer = ReturnType<typeof createRelayServer>;
 - [ ] **Step 4: Run the tests to verify they pass and raise the floor**
 
 Run: `npm run test:relay --silent`
-Expected: `ℹ tests 56`, `ℹ fail 0`.
+Expected: `ℹ tests 54`, `ℹ fail 0` (10 + 15 + 11 + 18).
 
 Set `EXPECTED_MIN_TESTS` in `m2-ci.yml` to the printed count.
 
@@ -2480,7 +2480,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
 - [ ] **Step 4: Run the tests to verify they pass and raise the floor**
 
 Run: `npm run test:relay --silent`
-Expected: `ℹ tests 70`, `ℹ fail 0`.
+Expected: `ℹ tests 68`, `ℹ fail 0` (10 + 15 + 11 + 18 + 14).
 
 Run: `npm run lint`
 Expected: exit 0 (this is the first task that imports `node:fs`/`node:path`/`node:url` in `relay/`).
