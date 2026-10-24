@@ -1096,6 +1096,9 @@ export function createIncidentStore({
         audit.record('ignored', { reason: 'no_event' });
         return null;
       }
+      // The source retries; the same event id must never become a second incident or a second send.
+      const existing = incidents.find((item) => item.eventId === event.id);
+      if (existing) return structuredClone(existing);
       const tier = forwardTier(payload);
       if (tier === null) {
         audit.record('ignored', { reason: 'tier_none', eventId: event.id, eventType: event.type });
