@@ -229,11 +229,25 @@ test('audit: sanitize drops secret-shaped keys at every depth and bounds long st
   const out = sanitize({
     ok: 'visible',
     password: 'sup3rs3cret',
+    assigneeUserId: 2,
+    deviceSerialLast4: 'HMS8',
+    signedAt: '2026-10-24T00:00:00.000Z',
+    designation: 'lead',
+    deviceToken: 't0k',
+    emailAddress: 'a@b.c',
+    signature: 'sig',
     nested: { authorization: 'Bearer abc', token: 't0k', email: 'a@b.c', keep: 'yes' },
     long: 'x'.repeat(500),
   }) as Record<string, unknown>;
   assert.equal(out.ok, 'visible');
   assert.equal(out.password, undefined);
+  assert.equal(out.assigneeUserId, 2);
+  assert.equal(out.deviceSerialLast4, 'HMS8');
+  assert.equal(out.signedAt, '2026-10-24T00:00:00.000Z');
+  assert.equal(out.designation, 'lead');
+  assert.equal(out.deviceToken, undefined);
+  assert.equal(out.emailAddress, undefined);
+  assert.equal(out.signature, undefined);
   const nested = out.nested as Record<string, unknown>;
   assert.equal(nested.authorization, undefined);
   assert.equal(nested.token, undefined);
@@ -248,6 +262,10 @@ test('audit: a circular object is recorded as a marker instead of throwing', () 
   const out = sanitize(value) as Record<string, unknown>;
   assert.equal(out.name, 'loop');
   assert.equal(out.self, '[circular]');
+  const shared = { x: 1 };
+  const copies = sanitize({ a: shared, b: shared }) as Record<string, unknown>;
+  assert.deepEqual(copies.a, { x: 1 });
+  assert.deepEqual(copies.b, { x: 1 });
   const log = createAuditLog();
   assert.doesNotThrow(() => log.record('internal_error', { value }));
 });
@@ -423,7 +441,23 @@ export type AuditAction =
 
 export type AuditEntry = { seq: number; at: string; action: AuditAction; data: Record<string, unknown> };
 
-const SECRET_KEY = /pass(word)?|secret|token|cookie|authorization|sign|email/i;
+// Keys are matched as whole words after splitting camelCase. A substring rule silently dropped
+// `assigneeUserId` and `deviceSerialLast4` (both contain "sign"/"serial"), which would have erased
+// the assignee from the AC-4 audit trail. The one safe serial form, a trailing `Last4`, is kept.
+const SECRET_WORDS = new Set([
+  'password', 'passwd', 'pass', 'secret', 'token', 'cookie',
+  'authorization', 'signature', 'sign', 'email', 'serial',
+]);
+
+function isSecretKey(key: string): boolean {
+  const words = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word !== '');
+  if (words[words.length - 1] === 'last4') return false;
+  return words.some((word) => SECRET_WORDS.has(word));
+}
 const MAX_STRING = 200;
 const MAX_DEPTH = 6;
 const MAX_ARRAY = 50;
@@ -439,13 +473,18 @@ export function sanitize(value: unknown, depth = 0, seen = new WeakSet<object>()
   }
   if (seen.has(value)) return '[circular]';
   seen.add(value);
-  if (Array.isArray(value)) return value.slice(0, MAX_ARRAY).map((item) => sanitize(item, depth + 1, seen));
-  const out: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value)) {
-    if (SECRET_KEY.test(key)) continue;
-    out[key] = sanitize(item, depth + 1, seen);
+  try {
+    if (Array.isArray(value)) return value.slice(0, MAX_ARRAY).map((item) => sanitize(item, depth + 1, seen));
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) {
+      if (isSecretKey(key)) continue;
+      out[key] = sanitize(item, depth + 1, seen);
+    }
+    return out;
+  } finally {
+    // Ancestors only: a shared acyclic object must be copied twice, not mislabeled `[circular]`.
+    seen.delete(value);
   }
-  return out;
 }
 
 export function createAuditLog({
