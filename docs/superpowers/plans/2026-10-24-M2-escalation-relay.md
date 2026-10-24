@@ -1412,7 +1412,7 @@ test('sheet: truncation is honest — the marker appears exactly when timeline e
   const noneStore = createIncidentStore({
     audit: noneAudit, recipients: [{ userId: 1 }, { userId: 2 }], now: noneClock.now,
   });
-  const noneIncident = noneStore.ingest(forwardPayload({ type: 'alarm', alarm: 'x'.repeat(3_500) }))!;
+  const noneIncident = noneStore.ingest(forwardPayload({ type: 'alarm', alarm: 'x'.repeat(3_600) }))!;
   noneClock.advance(1_000);
   noneStore.delivered(noneIncident.id, 1);
   noneClock.advance(1_000);
