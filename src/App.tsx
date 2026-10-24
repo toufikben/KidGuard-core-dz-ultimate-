@@ -132,9 +132,9 @@ export default function App() {
   // first visible child, else null. ZonesScreen is only rendered when this is non-null (R-M1-21).
   const childrenState = useChildren();
   // R-M1-29: the alerts view owns the live channel. The hook is mounted unconditionally (Rules of
-  // Hooks) but only connects while the view is open; leaving it closes the socket, cancels the
-  // fallback timer and revokes the token once (R-M1-34).
-  const liveAlerts = useLiveAlerts(view === 'alerts');
+  // Hooks) but only connects while the view is open and a session is signed in; leaving either
+  // closes the socket, cancels the fallback timer and revokes the token once (R-M1-34).
+  const liveAlerts = useLiveAlerts(view === 'alerts' && session.status === 'signed-in');
   const selectedChild = pickSelectedChild(childrenState.children, selectedChildId);
 
   // Contacts are read only for the selected child and only while the contacts view is open.

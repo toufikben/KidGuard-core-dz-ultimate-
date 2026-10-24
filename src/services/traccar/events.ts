@@ -78,6 +78,7 @@ export type ExitTracker = {
 
 type PendingRecord = PendingExit & {
   event: ServerEvent;
+  eventMs: number;
   lastFixMs: number | null;
   lastPositionId: number | null;
 };
@@ -128,6 +129,7 @@ export function createExitTracker({
         eventId: finiteNumber(event.id) ?? 0,
         count: 0,
         event,
+        eventMs,
         lastFixMs: null,
         lastPositionId: null,
       });
@@ -144,18 +146,20 @@ export function createExitTracker({
       for (const [key, record] of pending) {
         if (record.deviceId !== deviceId) continue;
 
-        // R-M1-31: a reading that puts the zone back is the reset — cancel, do not pause.
+        // Replay and retransmission guards come FIRST (R-M1-31): an old or re-delivered row is not
+        // a new observation, so it may neither count as outside evidence nor cancel a live count.
+        const positionId = finiteNumber(position.id);
+        if (positionId !== null && record.lastPositionId === positionId) continue;
+        if (record.lastFixMs !== null && fixMs <= record.lastFixMs) continue;
+        // A reading dated at or before the exit event cannot describe the world after that exit.
+        if (fixMs <= record.eventMs) continue;
+
+        // R-M1-31: a NEW reading that puts the zone back is the reset — cancel, do not pause.
         const inside = Array.isArray(position.geofenceIds) && position.geofenceIds.includes(record.geofenceId);
         if (inside) {
           pending.delete(key);
           continue;
         }
-
-        // The same row re-delivered (socket replay + poll of the same latest row) is ONE reading.
-        const positionId = finiteNumber(position.id);
-        if (positionId !== null && record.lastPositionId === positionId) continue;
-        // An older fix arriving after a newer one is a retransmission, not a new consecutive read.
-        if (record.lastFixMs !== null && fixMs <= record.lastFixMs) continue;
 
         record.count += 1;
         record.lastFixMs = fixMs;

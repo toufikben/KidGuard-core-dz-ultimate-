@@ -54,9 +54,6 @@ export type AlertsLogProps = {
   connection?: ConnectionState;
   // The announced fallback cadence, in seconds. Defaults to the live channel's own constant.
   pollIntervalSeconds?: number;
-  // Accepted as the screen's clock seam; rows are described by measured fields only, so the current
-  // render never needs to turn a timestamp into a confident sentence.
-  now?: number;
   onAcknowledge?: (eventId: number) => void;
 };
 
@@ -212,6 +209,7 @@ export function useLiveAlerts(enabled: boolean): LiveAlertsState {
 
   useEffect(() => {
     if (!enabled) {
+      setEntries([]);
       setConnection('closed');
       return undefined;
     }
@@ -246,8 +244,9 @@ export function useLiveAlerts(enabled: boolean): LiveAlertsState {
       }
       handle = opened;
     }).catch(() => {
-      // connectLive builds no message that carries a secret; the screen only needs the state.
-      if (alive) setConnection('fallback');
+      // connectLive rejects only when there is no signed-in server/session to connect with, so there
+      // is no channel and no client to poll: the honest state is closed, never a claimed fallback.
+      if (alive) setConnection('closed');
     });
 
     return () => {

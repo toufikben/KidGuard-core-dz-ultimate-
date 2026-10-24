@@ -48,7 +48,6 @@ export type ConnectLiveOptions = {
   baseUrl?: string | null;
   client?: TraccarClient | null;
   pollIntervalMs?: number;
-  now?: () => number;
   revokeToken?: (token: string) => Promise<void>;
 };
 

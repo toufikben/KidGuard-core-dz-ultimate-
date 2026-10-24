@@ -97,7 +97,6 @@ function renderAlerts(over: {
     entries: over.entries ?? [],
     devices: over.devices ?? [DEVICE],
     connection: over.connection ?? 'live',
-    now: NOW,
   }));
 }
 
@@ -300,6 +299,49 @@ test('a reading that puts the zone back cancels the pending exit and resets the 
   assert.equal(store.entries.length, 0, 'after a return, three outside reads alone do not re-raise');
 });
 
+// ── an old or re-delivered row is not a new observation ──────────────────────────────────────
+test('a replayed or older reading can neither count nor cancel a live exit count', () => {
+  const store = eventLog({ now: () => NOW });
+  store.accept(exitEvent()); // event at NOW-10s
+  assert.deepEqual(store.notePosition(position({ id: 950, fixTime: isoAgo(8) })), []);
+  assert.deepEqual(store.notePosition(position({ id: 951, fixTime: isoAgo(7) })), []);
+  assert.equal(store.pendingExits().length, 1);
+  assert.equal(store.pendingExits()[0].count, 2);
+
+  // An inside row older than the last accepted fix is a retransmission, not a return to the zone.
+  assert.deepEqual(store.notePosition(position({ id: 952, fixTime: isoAgo(9), geofenceIds: [7] })), []);
+  assert.equal(store.pendingExits().length, 1, 'an older inside row must not cancel the pending exit');
+  assert.equal(store.pendingExits()[0].count, 2, 'an older row is not a new reading');
+
+  const raised = store.notePosition(position({ id: 953, fixTime: isoAgo(6) }));
+  assert.equal(raised.length, 1, 'the next NEW outside reading is the third one');
+  assert.equal(raised[0].count, 3);
+  assert.equal(store.entries.length, 1);
+});
+
+test('a reading dated at or before the exit event can never cancel or count', () => {
+  const store = eventLog({ now: () => NOW });
+  store.accept(exitEvent()); // event at NOW-10s
+
+  // Pre-event inside reading: not evidence about the world after the exit.
+  assert.deepEqual(store.notePosition(position({ id: 960, fixTime: isoAgo(12), geofenceIds: [7] })), []);
+  assert.equal(store.pendingExits().length, 1, 'a pre-event row must not cancel the pending exit');
+  assert.equal(store.pendingExits()[0].count, 0);
+
+  // Exactly at the event instant: strictly-after is required, so it is skipped too.
+  assert.deepEqual(store.notePosition(position({ id: 961, fixTime: isoAgo(10), geofenceIds: [7] })), []);
+  assert.equal(store.pendingExits().length, 1);
+  assert.equal(store.pendingExits()[0].count, 0);
+
+  for (const read of [
+    position({ id: 962, fixTime: isoAgo(8) }),
+    position({ id: 963, fixTime: isoAgo(7) }),
+    position({ id: 964, fixTime: isoAgo(6) }),
+  ]) store.notePosition(read);
+  assert.equal(store.entries.length, 1, 'three genuinely newer outside readings still confirm the exit');
+  assert.equal(store.entries[0].evidenceCount, 3);
+});
+
 // ── a repeated position row is one reading ────────────────────────────────────────────────────
 test('the same position row read three times is one reading, not three', () => {
   const store = eventLog({ now: () => NOW });
@@ -380,4 +422,25 @@ test('AlertsLog holds zero Arabic codepoints, no literal RTL and reads copy from
   assert.doesNotMatch(source, /[\u0600-\u06FF]/, 'every string belongs to the catalog (R-M1-18)');
   assert.doesNotMatch(source, /direction:\s*['"]?rtl/, 'direction follows the lang prop');
   assert.match(source, /translate\(/, 'the copy is read through the catalog');
+});
+
+// ── an absent session is closed, not a fake polling fallback ─────────────────────────────────
+test('a refused live channel is closed, never announced as a polling fallback', () => {
+  const source = readFileSync(new URL('../../src/components/AlertsLog.tsx', import.meta.url), 'utf8');
+  const catchBlock = source.match(/\.catch\(\(\) => \{[\s\S]*?\n    \}\);/)?.[0] ?? '';
+  assert.notEqual(catchBlock, '', 'the refusal path is present');
+  assert.ok(catchBlock.includes("setConnection('closed')"), 'no channel and no poll is the closed state');
+  assert.equal(catchBlock.includes("setConnection('fallback')"), false,
+    'a fallback cadence is never claimed when no client exists');
+});
+
+test('the live alerts channel opens only for a signed-in session', () => {
+  const app = readFileSync(new URL('../../src/App.tsx', import.meta.url), 'utf8');
+  assert.match(app, /useLiveAlerts\(view === 'alerts' && session\.status === 'signed-in'\)/);
+});
+
+test('leaving the alerts view empties the session log before it can be painted again', () => {
+  const source = readFileSync(new URL('../../src/components/AlertsLog.tsx', import.meta.url), 'utf8');
+  assert.match(source, /if \(!enabled\) \{\s*setEntries\(\[\]\);\s*setConnection\('closed'\);/,
+    'the disabled branch empties the log, so reopening cannot paint a previous session');
 });
