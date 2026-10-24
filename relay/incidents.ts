@@ -121,11 +121,15 @@ export function createIncidentStore({
       timeline(incident, 'window_expired', { userId: from, atEnd: false });
       const next = incident.recipients[index + 1];
       const nextDelivery = incident.deliveries[index + 1];
+      const deliveryMs = nextDelivery.deliveredAt === null ? null : Date.parse(nextDelivery.deliveredAt);
       const start = Math.max(at, baseMs(nextDelivery));
       incident.currentRecipientUserId = next.userId;
       incident.deadlineAt = new Date(start + incident.windowMs).toISOString();
       audit.record('escalation', {
-        incidentId: incident.id, from, to: next.userId, basis: nextDelivery.deliveredAt ? 'delivered' : 'sent',
+        incidentId: incident.id, from, to: next.userId,
+        basis: deliveryMs !== null && deliveryMs >= at ? 'delivered' : 'sent',
+        anchorAt: new Date(start).toISOString(),
+        deadlineAt: incident.deadlineAt,
       });
       timeline(incident, 'escalation', { from, to: next.userId });
     }
@@ -199,7 +203,7 @@ export function createIncidentStore({
       delivery.state = 'delivered';
       audit.record('delivered', { incidentId: id, userId, inferred: false });
       timeline(incident, 'delivered', { userId });
-      if (!incident.degraded && incident.state === 'active' && incident.currentRecipientUserId === userId) {
+      if (!incident.atEnd && !incident.degraded && incident.state === 'active' && incident.currentRecipientUserId === userId) {
         const next = at + incident.windowMs;
         if (incident.deadlineAt === null || next > Date.parse(incident.deadlineAt)) {
           incident.deadlineAt = new Date(next).toISOString();
@@ -218,7 +222,7 @@ export function createIncidentStore({
         delivery.deliveredAt = iso;
         audit.record('delivered', { incidentId: id, userId, inferred: true });
         timeline(incident, 'delivered', { userId, inferred: true });
-        if (!incident.degraded && incident.state === 'active' && incident.currentRecipientUserId === userId) {
+        if (!incident.atEnd && !incident.degraded && incident.state === 'active' && incident.currentRecipientUserId === userId) {
           const next = at + incident.windowMs;
           if (incident.deadlineAt === null || next > Date.parse(incident.deadlineAt)) {
             incident.deadlineAt = new Date(next).toISOString();
@@ -240,9 +244,11 @@ export function createIncidentStore({
       }
       if (incident.assigneeUserId === userId) return { incident: structuredClone(incident), changed: false };
       incident.assigneeUserId = userId;
-      incident.state = 'assigned';
-      incident.deadlineAt = null;
-      audit.record('ack', { incidentId: id, userId, afterDegraded: incident.degraded });
+      if (!incident.degraded) {
+        incident.state = 'assigned';
+        incident.deadlineAt = null;
+      }
+      audit.record('ack', { incidentId: id, userId, assigneeUserId: userId, afterDegraded: incident.degraded });
       timeline(incident, 'ack', { userId });
       return { incident: structuredClone(incident), changed: true };
     },

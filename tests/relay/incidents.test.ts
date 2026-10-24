@@ -42,10 +42,11 @@ test('incidents: a delivery while current extends the deadline from the delivery
 
 test('incidents: a tick before the deadline changes nothing', () => {
   const { store, clock, audit } = setup();
-  store.ingest(forwardPayload());
+  const incident = store.ingest(forwardPayload())!;
   clock.advance(WINDOW - 1);
   store.tick();
   assert.equal(audit.entries().filter((entry) => entry.action === 'window_expired').length, 0);
+  assert.equal(store.get(incident.id).deadlineAt, new Date(T0 + WINDOW).toISOString());
 });
 
 test('incidents: expiry escalates to the next recipient with a fresh window and a sequence log', () => {
@@ -89,6 +90,9 @@ test('incidents: any recipient may ack; the ack assigns, stops the ladder, close
   assert.equal(result.incident.state, 'assigned');
   assert.equal(result.incident.tier, 'P1');
   assert.equal(result.incident.deadlineAt, null);
+  const ackEntry = audit.entries().find((entry) => entry.action === 'ack')!;
+  assert.equal(ackEntry.data.assigneeUserId, 2);
+  assert.equal(ackEntry.data.afterDegraded, false);
   clock.advance(10 * WINDOW);
   store.tick();
   assert.equal(actions(audit).filter((action) => action === 'window_expired').length, 0);
@@ -140,6 +144,7 @@ test('incidents: silence degradation clears the assignee, jumps to the last cont
   assert.equal(after.assigneeUserId, null);
   assert.equal(after.currentRecipientUserId, 2);
   assert.equal(after.deadlineAt, null);
+  assert.equal(after.atEnd, true);
   assert.equal(actions(audit).filter((action) => action === 'degraded').length, 1);
   const escalation = audit.entries().find((entry) => entry.action === 'escalation')!;
   assert.equal(escalation.data.reason, 'silence');
@@ -187,4 +192,112 @@ test('incidents: an ignored tier creates no incident and is audited', () => {
   assert.equal(store.ingest(forwardPayload({ type: 'geofenceEnter' })), null);
   assert.equal(store.list().length, 0);
   assert.equal(audit.entries().find((entry) => entry.action === 'ignored')!.data.reason, 'tier_none');
+});
+
+test('incidents: a repeated event id returns the original incident and never re-sends', () => {
+  const { store, audit } = setup();
+  const first = store.ingest(forwardPayload())!;
+  const second = store.ingest(forwardPayload())!;
+  assert.equal(second.id, first.id);
+  assert.equal(store.list().length, 1);
+  assert.equal(actions(audit).filter((action) => action === 'ingest').length, 1);
+  assert.equal(actions(audit).filter((action) => action === 'sent').length, 2);
+});
+
+test('incidents: an escalation past a notification that landed earlier is audited as sent, with its real anchor', () => {
+  const { store, clock, audit } = setup();
+  const incident = store.ingest(forwardPayload())!;
+  clock.advance(10_000);
+  store.delivered(incident.id, 2);
+  clock.advance(50_000);
+  store.tick();
+  const escalation = audit.entries().find((entry) => entry.action === 'escalation')!;
+  const after = store.get(incident.id);
+  assert.equal(after.deadlineAt, new Date(T0 + WINDOW + WINDOW).toISOString());
+  assert.equal(escalation.data.basis, 'sent');
+  assert.equal(escalation.data.anchorAt, new Date(T0 + WINDOW).toISOString());
+  assert.equal(escalation.data.deadlineAt, after.deadlineAt);
+});
+
+test('incidents: an escalation at the delivery instant is audited as delivered', () => {
+  const { store, clock, audit } = setup();
+  const incident = store.ingest(forwardPayload())!;
+  clock.advance(WINDOW);
+  store.delivered(incident.id, 2);
+  store.tick();
+  const escalation = audit.entries().find((entry) => entry.action === 'escalation')!;
+  assert.equal(escalation.data.basis, 'delivered');
+  assert.equal(escalation.data.anchorAt, new Date(T0 + WINDOW).toISOString());
+  assert.equal(store.get(incident.id).deadlineAt, new Date(T0 + WINDOW + WINDOW).toISOString());
+});
+
+test('incidents: a late receipt after the ladder ended cannot reopen a window', () => {
+  const deliveredRun = setup();
+  const deliveredIncident = deliveredRun.store.ingest(forwardPayload())!;
+  deliveredRun.clock.advance(WINDOW);
+  deliveredRun.store.tick();
+  deliveredRun.clock.advance(WINDOW);
+  deliveredRun.store.tick();
+  deliveredRun.clock.advance(5_000);
+  assert.equal(deliveredRun.store.delivered(deliveredIncident.id, 2).deadlineAt, null);
+
+  const openedRun = setup();
+  const openedIncident = openedRun.store.ingest(forwardPayload())!;
+  openedRun.clock.advance(WINDOW);
+  openedRun.store.tick();
+  openedRun.clock.advance(WINDOW);
+  openedRun.store.tick();
+  openedRun.clock.advance(5_000);
+  assert.equal(openedRun.store.opened(openedIncident.id, 2).deadlineAt, null);
+
+  for (const run of [deliveredRun, openedRun]) {
+    run.clock.advance(10 * WINDOW);
+    run.store.tick();
+    const atEnd = run.audit.entries().filter((entry) => entry.action === 'window_expired' && entry.data.atEnd === true);
+    assert.equal(atEnd.length, 1);
+  }
+});
+
+test('incidents: an opened receipt without a prior delivery counts as an inferred delivery', () => {
+  const { store, clock, audit } = setup();
+  const incident = store.ingest(forwardPayload())!;
+  clock.advance(20_000);
+  const after = store.opened(incident.id, 1);
+  assert.equal(after.deliveries[0].state, 'opened');
+  assert.equal(after.deliveries[0].deliveredAt, new Date(T0 + 20_000).toISOString());
+  assert.equal(after.deadlineAt, new Date(T0 + 20_000 + WINDOW).toISOString());
+  const inferred = audit.entries().find((entry) => entry.action === 'delivered' && entry.data.inferred === true);
+  assert.ok(inferred);
+});
+
+test('incidents: acking a degraded incident records the assignee and keeps the degraded state', () => {
+  const { store, audit } = setup();
+  const incident = store.ingest(forwardPayload())!;
+  store.degradeOpen('silence');
+  const result = store.ack(incident.id, 2);
+  assert.equal(result.changed, true);
+  assert.equal(result.incident.assigneeUserId, 2);
+  assert.equal(result.incident.state, 'degraded');
+  assert.equal(result.incident.degraded, true);
+  assert.equal(result.incident.deadlineAt, null);
+  const ack = audit.entries().find((entry) => entry.action === 'ack')!;
+  assert.equal(ack.data.assigneeUserId, 2);
+  assert.equal(ack.data.afterDegraded, true);
+  assert.equal(store.ack(incident.id, 2).changed, false);
+});
+
+test('incidents: a non-recipient cannot receipt or ack the incident', () => {
+  const { store } = setup();
+  const incident = store.ingest(forwardPayload())!;
+  for (const attempt of [
+    () => store.delivered(incident.id, 99),
+    () => store.opened(incident.id, 99),
+    () => store.ack(incident.id, 99),
+  ]) {
+    assert.throws(attempt, (error: unknown) => {
+      assert.ok(error instanceof RelayError);
+      assert.equal((error as RelayError).kind, 'forbidden');
+      return true;
+    });
+  }
 });
