@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { App as CapApp } from '@capacitor/app';
@@ -18,16 +18,28 @@ import {
 } from './types';
 import { Language } from './translations';
 import { isCatalogLang, translate } from './translations/catalog.ts';
-import { noDataLabel, type Freshness } from './services/traccar/positions.ts';
-import type { ServerPosition, ServerGeofence } from './services/traccar/types.ts';
+import type { ServerGeofence, ServerUser } from './services/traccar/types.ts';
 import type { MapZone } from './components/MapView';
 import { activeClient } from './services/traccar/session.ts';
+import { TraccarError } from './services/traccar/client.ts';
 import { useSession } from './state/session.ts';
+import {
+  assignGuardian,
+  clearChildren,
+  guardianSummary,
+  listGuardiansFor,
+  listServerUsers,
+  pickSelectedChild,
+  refreshChildren,
+  unassignGuardian,
+  useChildren,
+} from './state/children.ts';
 import { createZoneService, type ZoneDraft } from './services/traccar/zones.ts';
 import { parseWkt } from './services/traccar/wkt.ts';
 import { Navbar } from './components/Navbar';
 import { ParentDashboard } from './components/ParentDashboard';
-import { ChildView } from './components/ChildView';
+import { ChildScreen } from './components/ChildScreen';
+import { ContactsScreen } from './components/ContactsScreen';
 import { ZonesScreen } from './components/ZonesScreen';
 import { SettingsModal } from './components/SettingsModal';
 
@@ -46,6 +58,17 @@ import { ProtectionStateService } from './services/ProtectionStateService';
 
 const ROLE_KEY = 'kidguard_role';
 const LANG_KEY = 'kidguard_lang';
+
+// One honest line per guardian-link failure. A refused write is named as a refusal (the same words
+// the session layer uses), never as a generic failure; anything else says the action failed. The
+// server's own body is never shown.
+function guardianFailureLine(error: unknown, lang: Language, fallbackKey: string): string {
+  if (error instanceof TraccarError) {
+    if (error.kind === 'forbidden') return translate('session.forbidden', lang);
+    if (error.kind === 'unauthorized') return translate('session.unauthorized', lang);
+  }
+  return translate(fallbackKey, lang);
+}
 
 // AC-2 (Task 8): the zone record lives on the SERVER (GET/POST /api/geofences via zones.ts), so the
 // old `kidguard_safe_zones` localStorage key is GONE — there is nothing here to load and nothing to
@@ -74,6 +97,11 @@ export default function App() {
 
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark');
 
+  // R-M1-23: the guardian shell has three VIEWS, not two roles. App always renders this shell; the
+  // stored `kidguard_role` still exists for Task 11 but no render branch reads it any more.
+  const [view, setView] = useState<'dashboard' | 'children' | 'contacts'>('dashboard');
+  const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
+
   const [location, setLocation] = useState<LocationPoint>({
     latitude: 36.7538,
     longitude: 3.0588,
@@ -96,6 +124,19 @@ export default function App() {
     const client = activeClient();
     return client ? createZoneService({ client }) : null;
   }, [session.status]);
+
+  // Task 9: the children are SERVER data (`GET /devices`, then each device's latest `/positions`).
+  // `selectedChild` is the exact rule the controller ruling names: the chosen device id, else the
+  // first visible child, else null. ZonesScreen is only rendered when this is non-null (R-M1-21).
+  const childrenState = useChildren();
+  const selectedChild = pickSelectedChild(childrenState.children, selectedChildId);
+
+  // Contacts are read only for the selected child and only while the contacts view is open.
+  const [guardians, setGuardians] = useState<ServerUser[]>([]);
+  const [guardianCandidates, setGuardianCandidates] = useState<ServerUser[]>([]);
+  const [guardiansLoading, setGuardiansLoading] = useState(false);
+  const [guardiansError, setGuardiansError] = useState<string | null>(null);
+  const guardianRequest = useRef(0);
   // The zones the map draws once a session exists: the server's own re-read (listZones after every
   // write), never a local record.
   const [serverZones, setServerZones] = useState<ServerGeofence[]>([]);
@@ -191,6 +232,84 @@ export default function App() {
       alive = false;
     };
   }, [zoneService]);
+
+  // The child list is refreshed when a session becomes signed-in, and on a language change so the
+  // labels follow the guardian's language. With no session the store is CLEARED: a previous
+  // guardian's children must not outlive the session that was allowed to see them.
+  useEffect(() => {
+    if (session.status === 'signed-in') {
+      void refreshChildren(lang);
+    } else {
+      clearChildren(lang);
+    }
+  }, [session.status, lang]);
+
+  // Read the selected child's guardian links + the accounts that could be shared. The ticket makes
+  // the last request win, so switching children quickly cannot paint an older child's guardians.
+  const loadGuardians = useCallback(async (deviceId: number) => {
+    const ticket = ++guardianRequest.current;
+    setGuardiansLoading(true);
+    setGuardiansError(null);
+    // Clear the previous child's rows immediately: showing them under a newly selected child would
+    // claim a link the server has not confirmed for this device.
+    setGuardians([]);
+    setGuardianCandidates([]);
+    try {
+      const [linked, all] = await Promise.all([
+        listGuardiansFor(deviceId),
+        listServerUsers(),
+      ]);
+      if (ticket !== guardianRequest.current) return;
+      setGuardians(linked);
+      setGuardianCandidates(all.filter((user) => !linked.some((guardian) => guardian.id === user.id)));
+    } catch (error) {
+      if (ticket !== guardianRequest.current) return;
+      setGuardians([]);
+      setGuardianCandidates([]);
+      setGuardiansError(guardianFailureLine(error, lang, 'contacts.loadFailed'));
+    } finally {
+      if (ticket === guardianRequest.current) setGuardiansLoading(false);
+    }
+  }, [lang]);
+
+  useEffect(() => {
+    if (view !== 'contacts' || selectedChild === null || session.status !== 'signed-in') {
+      guardianRequest.current += 1;
+      setGuardians([]);
+      setGuardianCandidates([]);
+      setGuardiansError(null);
+      setGuardiansLoading(false);
+      return;
+    }
+    void loadGuardians(selectedChild.device.id);
+  }, [view, selectedChild?.device.id, session.status, loadGuardians]);
+
+  const handleAssignGuardian = async (userId: number) => {
+    if (!selectedChild) return;
+    setGuardiansError(null);
+    try {
+      // The state layer re-reads identity() on this call; `isAdmin` below only disables the button.
+      await assignGuardian(selectedChild.device.id, userId);
+      await loadGuardians(selectedChild.device.id);
+    } catch (error) {
+      setGuardiansError(guardianFailureLine(error, lang, 'contacts.actionFailed'));
+    }
+  };
+
+  const handleUnassignGuardian = async (userId: number) => {
+    if (!selectedChild) return;
+    setGuardiansError(null);
+    try {
+      await unassignGuardian(selectedChild.device.id, userId);
+      await loadGuardians(selectedChild.device.id);
+    } catch (error) {
+      setGuardiansError(guardianFailureLine(error, lang, 'contacts.actionFailed'));
+    }
+  };
+
+  const handleRefreshGuardians = () => {
+    if (selectedChild) void loadGuardians(selectedChild.device.id);
+  };
 
   const runEvaluation = useCallback(
     async (currentLoc: LocationPoint, zones: SafeZone[]) => {
@@ -615,13 +734,10 @@ export default function App() {
     })
     .filter((zone): zone is MapZone => zone !== null), [serverZones]);
 
-  // Task 9 supplies these from the server. A child track is server data too, so none is shown yet.
-  const childPosition: ServerPosition | null = null;
-  const childFreshness: Freshness | null = null;
-  const childHistory: { lat: number; lon: number }[] = [];
-  // With no reading the map may only say what the words for "no data" are; Task 9 replaces this
-  // with formatPositionLabel of the chosen reading.
-  const childLabel: string | null = noDataLabel(lang);
+  // The map's child feed is now the selected child's server reading: position, freshness and label
+  // all come from `useChildren()`. A track history endpoint is not part of this task, so the map is
+  // given an empty history rather than a fabricated one; a conflict becomes readings=null in the
+  // state layer, which is why the map still receives sourceConflict={false}.
 
   return (
     <div
@@ -644,8 +760,8 @@ export default function App() {
         </div>
       )}
       <Navbar
-        role={role}
-        setRole={handleRoleChange}
+        view={view}
+        onViewChange={setView}
         lang={lang}
         setLang={setLang}
         theme={theme}
@@ -723,7 +839,7 @@ export default function App() {
           </button>
         </div>
 
-        {role === 'PARENT' ? (
+        {view === 'dashboard' && (
           <ParentDashboard
             location={location}
             riskAssessment={riskAssessment}
@@ -733,14 +849,27 @@ export default function App() {
             pairingInfo={pairingInfo}
             lang={lang}
             zonesPanel={
-              <ZonesScreen
-                lang={lang}
-                service={zoneService}
-                isAdmin={session.user?.admin === true}
-                childName={alertPolicy.childName}
-                guardianUserIds={session.user ? [session.user.id] : undefined}
-                onServerZones={setServerZones}
-              />
+              <>
+                {/* R-M1-21: without a server-selected child there is NO zone panel — the sentence
+                    below says why. With one, the literal childDeviceId wiring is what makes the
+                    saved zone actually evaluated. */}
+                {selectedChild && (
+                  <ZonesScreen
+                    lang={lang}
+                    service={zoneService}
+                    isAdmin={session.user?.admin === true}
+                    childName={selectedChild.device.name}
+                    childDeviceId={selectedChild.device.id}
+                    guardianUserIds={session.user ? [session.user.id] : undefined}
+                    onServerZones={setServerZones}
+                  />
+                )}
+                {!selectedChild && (
+                  <p className="text-sm text-amber-200 bg-amber-950/40 border border-amber-700/40 rounded-2xl px-4 py-5">
+                    {translate('zones.noChild', lang)}
+                  </p>
+                )}
+              </>
             }
             onUpdateAlertPolicy={handleUpdateAlertPolicy}
             onSyncNow={handleSyncNow}
@@ -752,11 +881,11 @@ export default function App() {
             onGenerateNewPairingCode={handleGenerateNewPairingCode}
             onPairWithCode={handlePairWithCode}
             onRevokeDevice={handleRevokeDevice}
-            childPosition={childPosition}
-            childFreshness={childFreshness}
-            childLabel={childLabel}
+            childPosition={selectedChild?.readings ?? null}
+            childFreshness={selectedChild?.freshness ?? null}
+            childLabel={selectedChild?.label ?? null}
             mapZones={mapZones}
-            mapHistory={childHistory}
+            mapHistory={[]}
             sourceConflict={false}
             onOpenSettings={handleOpenSettings}
             activeTab={parentActiveTab}
@@ -767,20 +896,35 @@ export default function App() {
             checkIn={checkIn}
             onRequestCheckIn={handleRequestCheckIn}
           />
-        ) : (
-          <ChildView
-            location={location}
-            riskAssessment={riskAssessment}
-            safeZones={safeZones}
-            healthStatus={healthStatus}
-            childName={alertPolicy.childName}
+        )}
+
+        {view === 'children' && (
+          <ChildScreen
             lang={lang}
-            onTriggerSos={handleTriggerSos}
-            onSendManualSms={handleSendManualSms}
-            onTriggerSiren={handleToggleSiren}
-            isSirenActive={isSirenActive}
-            checkIn={checkIn}
-            onRespondCheckIn={handleRespondCheckIn}
+            loading={childrenState.loading}
+            error={childrenState.error}
+            children={childrenState.children}
+            selectedId={selectedChild?.device.id ?? null}
+            onSelect={setSelectedChildId}
+            onRefresh={() => { void refreshChildren(lang); }}
+          />
+        )}
+
+        {view === 'contacts' && (
+          <ContactsScreen
+            lang={lang}
+            children={childrenState.children}
+            selectedId={selectedChild?.device.id ?? null}
+            onSelectChild={setSelectedChildId}
+            guardians={guardians}
+            candidates={guardianCandidates}
+            summary={guardianSummary(guardians)}
+            loading={guardiansLoading}
+            error={guardiansError ?? childrenState.error}
+            isAdmin={session.user?.admin === true}
+            onAssign={(userId) => { void handleAssignGuardian(userId); }}
+            onUnassign={(userId) => { void handleUnassignGuardian(userId); }}
+            onRefresh={handleRefreshGuardians}
           />
         )}
       </main>

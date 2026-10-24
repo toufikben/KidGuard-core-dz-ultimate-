@@ -233,6 +233,100 @@ export const catalog: Record<string, CatalogEntry> = {
   'zones.type.mosque': { ar: 'مسجد', fr: 'Mosquée', en: 'Mosque' },
   'zones.type.activity': { ar: 'نشاط', fr: 'Activité', en: 'Activity' },
   'zones.type.relative': { ar: 'بيت قريب', fr: 'Chez un proche', en: 'A relative’s home' },
+
+  // Task 9 — the guardian shell and the two server-backed screens (R-M1-23). The tabs are views, not
+  // roles: the role switcher is gone and every screen below reads the server. R-M1-21: with no child
+  // selected there is no zone panel at all, because a zone saved without a device link is stored but
+  // never evaluated — the sentence says exactly that instead of offering a dead form.
+  'tabs.dashboard': { ar: 'لوحة المتابعة', fr: 'Tableau de suivi', en: 'Dashboard' },
+  'tabs.children': { ar: 'الأطفال', fr: 'Enfants', en: 'Children' },
+  'tabs.contacts': { ar: 'الأولياء', fr: 'Tuteurs', en: 'Guardians' },
+  'nav.online': { ar: 'متصل', fr: 'En ligne', en: 'Online' },
+  'nav.offline': { ar: 'أوفلاين', fr: 'Hors ligne', en: 'Offline' },
+  'zones.noChild': {
+    ar: 'لا طفل مختاراً من الخادم: لا تُحفظ منطقة بلا رابط جهاز، لذلك لا تُعرض أدوات الرسم.',
+    fr: "Aucun enfant sélectionné depuis le serveur : une zone sans lien d'appareil ne peut pas être enregistrée, donc les outils de dessin ne sont pas affichés.",
+    en: 'No child selected from the server: a zone without a device link cannot be saved, so the drawing tools are not shown.',
+  },
+
+  // The children list. The source of every label is the server's device name (never a local
+  // `childName` setting), and freshness below names the measured age — no live/safe/guaranteed claim.
+  'children.title': { ar: 'الأطفال', fr: 'Enfants', en: 'Children' },
+  'children.serverShared': {
+    ar: 'القائمة من الخادم: لا يظهر إلا ما شُورك مع هذا الحساب',
+    fr: 'Liste du serveur : seul ce qui est partagé avec ce compte apparaît',
+    en: 'The list is the server’s: only what is shared with this account appears',
+  },
+  'children.loading': { ar: 'جارٍ قراءة الأطفال من الخادم…', fr: 'Lecture des enfants depuis le serveur…', en: 'Reading the children from the server…' },
+  'children.noneShared': {
+    ar: 'لا يوجد طفل مشترك مع هذا الحساب على الخادم',
+    fr: 'Aucun enfant n’est partagé avec ce compte sur le serveur',
+    en: 'No child is shared with this account on the server',
+  },
+  'children.loadFailed': {
+    ar: 'تعذّرت قراءة الأطفال من الخادم',
+    fr: 'Impossible de lire les enfants depuis le serveur',
+    en: 'Could not read the children from the server',
+  },
+  'children.sourceFromDevice': { ar: 'من {source}، {reading}', fr: 'de {source}, {reading}', en: 'from {source}, {reading}' },
+  'children.refresh': { ar: 'تحديث من الخادم', fr: 'Rafraîchir depuis le serveur', en: 'Refresh from the server' },
+  'children.unnamedDevice': {
+    ar: 'جهاز بلا اسم من الخادم',
+    fr: 'Appareil sans nom fourni par le serveur',
+    en: 'Device with no name from the server',
+  },
+  'children.selected': { ar: 'مختار', fr: 'Sélectionné', en: 'Selected' },
+  'children.freshness.fresh': { ar: 'قراءة خلال آخر ٣ دقائق', fr: 'Lecture de moins de 3 minutes', en: 'Reading under 3 minutes old' },
+  'children.freshness.aging': { ar: 'قراءة أقدم من ٣ دقائق', fr: 'Lecture de plus de 3 minutes', en: 'Reading over 3 minutes old' },
+  'children.freshness.silent': { ar: 'قراءة أقدم من ٥ دقائق', fr: 'Lecture de plus de 5 minutes', en: 'Reading over 5 minutes old' },
+  'children.freshness.none': { ar: 'لا قراءة من الخادم', fr: 'Aucune lecture du serveur', en: 'No reading from the server' },
+
+  // The contacts screen. §5.12: a single guardian is a normal configuration — no voting, time-based
+  // escalation — and it never disables the screen. Viewer read-only names the server's own gate; the
+  // real gate is `identity()` inside assignGuardian/unassignGuardian.
+  'contacts.title': { ar: 'الأولياء', fr: 'Tuteurs', en: 'Guardians' },
+  'contacts.subtitle': {
+    ar: 'من يرى ماذا يقرره الخادم: تصل فقط الأجهزة المشتركة مع هذا الحساب',
+    fr: 'Qui voit quoi est décidé par le serveur : seuls les appareils partagés avec ce compte arrivent',
+    en: 'Who sees what is decided by the server: only devices shared with this account arrive',
+  },
+  'contacts.child': { ar: 'الطفل', fr: 'Enfant', en: 'Child' },
+  'contacts.guardians': { ar: 'الأولياء المسجّلون لهذا الطفل', fr: 'Tuteurs enregistrés pour cet enfant', en: 'Guardians registered for this child' },
+  'contacts.count': { ar: 'العدد: {count}', fr: 'Nombre : {count}', en: 'Count: {count}' },
+  'contacts.loading': { ar: 'جارٍ قراءة الأولياء من الخادم…', fr: 'Lecture des tuteurs depuis le serveur…', en: 'Reading the guardians from the server…' },
+  'contacts.loadFailed': {
+    ar: 'تعذّرت قراءة الأولياء من الخادم',
+    fr: 'Impossible de lire les tuteurs depuis le serveur',
+    en: 'Could not read the guardians from the server',
+  },
+  'contacts.actionFailed': {
+    ar: 'تعذّر تحديث المشاركة على الخادم',
+    fr: 'Impossible de mettre à jour le partage sur le serveur',
+    en: 'Could not update sharing on the server',
+  },
+  'contacts.none': {
+    ar: 'لا وليّ مسجّل لهذا الطفل على الخادم',
+    fr: 'Aucun tuteur enregistré pour cet enfant sur le serveur',
+    en: 'No guardian is registered for this child on the server',
+  },
+  'contacts.singleGuardian': {
+    ar: 'ولي أمر واحد مسجّل لهذا الطفل: لا تصويت بين الأولياء، والتصعيد زمني.',
+    fr: 'Un seul tuteur est enregistré pour cet enfant : pas de vote entre tuteurs, l’escalade est temporelle.',
+    en: 'One guardian is registered for this child: no guardian vote, escalation is time-based.',
+  },
+  'contacts.viewerReadOnly': {
+    ar: 'حسابك لا يملك صلاحية تعديل المشاركة (قراءة فقط)',
+    fr: 'Votre compte ne peut pas modifier les partages (lecture seule)',
+    en: 'Your account cannot change sharing (read-only)',
+  },
+  'contacts.available': { ar: 'حسابات يمكن مشاركتها', fr: 'Comptes pouvant être partagés', en: 'Accounts that can be shared' },
+  'contacts.add': { ar: 'مشاركة', fr: 'Partager', en: 'Share' },
+  'contacts.remove': { ar: 'إلغاء المشاركة', fr: 'Retirer le partage', en: 'Remove sharing' },
+  'contacts.noCandidates': {
+    ar: 'لا حساب آخر متاح للمشاركة',
+    fr: 'Aucun autre compte disponible pour le partage',
+    en: 'No other account is available to share with',
+  },
 };
 
 // A locale is a control value, not data: whatever a screen read out of storage must be narrowed
