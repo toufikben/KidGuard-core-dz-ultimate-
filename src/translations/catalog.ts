@@ -241,6 +241,63 @@ export const catalog: Record<string, CatalogEntry> = {
   'tabs.dashboard': { ar: 'لوحة المتابعة', fr: 'Tableau de suivi', en: 'Dashboard' },
   'tabs.children': { ar: 'الأطفال', fr: 'Enfants', en: 'Children' },
   'tabs.contacts': { ar: 'الأولياء', fr: 'Tuteurs', en: 'Guardians' },
+  'tabs.alerts': { ar: 'التنبيهات', fr: 'Alertes', en: 'Alerts' },
+
+  // Task 10 — the alerts log. Every row is a server event read from the live channel; the copy never
+  // promises completeness (the badge says «منذ فتح الجلسة»), and P2 stays an in-app sentence with no
+  // escalation word of any kind (R-M1-32, R-M1-35, R-M1-36).
+  'alerts.title': { ar: 'سجل التنبيهات', fr: 'Journal des alertes', en: 'Alerts log' },
+  'alerts.sinceOpened': { ar: 'منذ فتح الجلسة', fr: 'Depuis l’ouverture de la session', en: 'Since this session opened' },
+  'alerts.empty': {
+    ar: 'لا تنبيهات مؤكدة منذ فتح الجلسة',
+    fr: 'Aucune alerte confirmée depuis l’ouverture de la session',
+    en: 'No confirmed alerts since this session opened',
+  },
+  'alerts.pendingAck': {
+    ar: 'حدث واحد لم يُؤكد — افتح التفاصيل',
+    fr: 'Un événement n’est pas confirmé — ouvrez les détails',
+    en: 'One event is unacknowledged — open the details',
+  },
+  'alerts.acknowledge': { ar: 'تأكيد', fr: 'Confirmer', en: 'Acknowledge' },
+  'alerts.acknowledged': { ar: 'مؤكَّد', fr: 'Confirmé', en: 'Acknowledged' },
+  'alerts.serverEvents': {
+    ar: 'الأحداث كما وصلت من الخادم',
+    fr: 'Événements reçus du serveur',
+    en: 'Events as received from the server',
+  },
+  'alerts.connection.connecting': {
+    ar: 'جارٍ الاتصال بالقناة المباشرة…',
+    fr: 'Connexion au canal direct…',
+    en: 'Connecting to the live channel…',
+  },
+  'alerts.connection.live': {
+    ar: 'القناة المباشرة متصلة',
+    fr: 'Canal direct connecté',
+    en: 'Live channel connected',
+  },
+  'alerts.connection.fallback': {
+    ar: 'انقطع الاتصال — استطلاع كل {seconds} ثانية',
+    fr: 'Canal interrompu — interrogation toutes les {seconds} s',
+    en: 'Channel interrupted — polling every {seconds} s',
+  },
+  'alerts.connection.closed': { ar: 'القناة مغلقة', fr: 'Canal fermé', en: 'Channel closed' },
+  'alerts.tier.p0': { ar: 'أولوية قصوى', fr: 'Priorité maximale', en: 'Highest priority' },
+  'alerts.tier.p1': { ar: 'أولوية عالية', fr: 'Priorité élevée', en: 'High priority' },
+  'alerts.tier.p2': { ar: 'معلومة داخل التطبيق', fr: 'Information dans l’application', en: 'In-app information' },
+  'alerts.tier.none': { ar: 'معلومة', fr: 'Information', en: 'Information' },
+  'alerts.type.alarm': { ar: 'إنذار الجهاز', fr: 'Alarme de l’appareil', en: 'Device alarm' },
+  'alerts.type.geofenceExit': {
+    ar: 'خروج من منطقة آمنة',
+    fr: 'Sortie d’une zone sûre',
+    en: 'Exit from a safe zone',
+  },
+  'alerts.type.deviceOffline': { ar: 'انقطاع الجهاز', fr: 'Appareil hors ligne', en: 'Device offline' },
+  'alerts.type.other': { ar: 'حدث آخر', fr: 'Autre événement', en: 'Other event' },
+  'alerts.exitEvidence': {
+    ar: 'تأكّد الخروج بعد {count} قراءات متتالية خارج المنطقة',
+    fr: 'Sortie confirmée après {count} lectures consécutives hors de la zone',
+    en: 'Exit confirmed after {count} consecutive readings outside the zone',
+  },
   'nav.online': { ar: 'متصل', fr: 'En ligne', en: 'Online' },
   'nav.offline': { ar: 'أوفلاين', fr: 'Hors ligne', en: 'Offline' },
   'zones.noChild': {

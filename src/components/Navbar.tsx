@@ -1,17 +1,19 @@
 import React from 'react';
-import { Shield, Baby, LayoutDashboard, Users, Settings } from 'lucide-react';
+import { Shield, Baby, LayoutDashboard, Users, Settings, TriangleAlert } from 'lucide-react';
 import { Language, translations } from '../translations';
 import { translate } from '../translations/catalog.ts';
 
-// R-M1-23: the three guardian views. This is navigation, not a role: the PARENT/CHILD switcher is
-// gone from the bar, and App always renders the guardian shell. The role model itself stays for
-// Task 11 and no branch here reads it.
-export type GuardianView = 'dashboard' | 'children' | 'contacts';
+// R-M1-23 / R-M1-29: the four guardian views. This is navigation, not a role: the PARENT/CHILD
+// switcher is gone from the bar, and App always renders the guardian shell. The role model itself
+// stays for Task 11 and no branch here reads it. `alerts` is the Task 10 log — a view like any other,
+// not a bell and not a notification channel.
+export type GuardianView = 'dashboard' | 'children' | 'contacts' | 'alerts';
 
 const VIEWS: { value: GuardianView; key: string; Icon: typeof Shield }[] = [
   { value: 'dashboard', key: 'tabs.dashboard', Icon: LayoutDashboard },
   { value: 'children', key: 'tabs.children', Icon: Baby },
   { value: 'contacts', key: 'tabs.contacts', Icon: Users },
+  { value: 'alerts', key: 'tabs.alerts', Icon: TriangleAlert },
 ];
 
 interface NavbarProps {
@@ -79,7 +81,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>{isOnline ? translate('nav.online', lang) : translate('nav.offline', lang)}</span>
           </div>
 
-          {/* Guardian view switcher — dashboard | children | contacts (no role branch, R-M1-23) */}
+          {/* Guardian view switcher — dashboard | children | contacts | alerts (no role branch, R-M1-29) */}
           <div className="bg-slate-800/90 p-0.5 rounded-lg flex items-center border border-slate-700/80 h-8 sm:h-9 shrink-0">
             {VIEWS.map(({ value, key, Icon }) => (
               <button

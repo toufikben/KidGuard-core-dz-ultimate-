@@ -41,6 +41,7 @@ import { Navbar } from './components/Navbar';
 import { ParentDashboard } from './components/ParentDashboard';
 import { ChildScreen } from './components/ChildScreen';
 import { ContactsScreen } from './components/ContactsScreen';
+import { AlertsLog, useLiveAlerts } from './components/AlertsLog';
 import { ZonesScreen } from './components/ZonesScreen';
 import { SettingsModal } from './components/SettingsModal';
 
@@ -98,9 +99,9 @@ export default function App() {
 
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark');
 
-  // R-M1-23: the guardian shell has three VIEWS, not two roles. App always renders this shell; the
-  // stored `kidguard_role` still exists for Task 11 but no render branch reads it any more.
-  const [view, setView] = useState<'dashboard' | 'children' | 'contacts'>('dashboard');
+  // R-M1-23 / R-M1-29: the guardian shell has four VIEWS, not two roles. App always renders this
+  // shell; the stored `kidguard_role` still exists for Task 11 but no render branch reads it any more.
+  const [view, setView] = useState<'dashboard' | 'children' | 'contacts' | 'alerts'>('dashboard');
   const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
 
   const [location, setLocation] = useState<LocationPoint>({
@@ -130,6 +131,10 @@ export default function App() {
   // `selectedChild` is the exact rule the controller ruling names: the chosen device id, else the
   // first visible child, else null. ZonesScreen is only rendered when this is non-null (R-M1-21).
   const childrenState = useChildren();
+  // R-M1-29: the alerts view owns the live channel. The hook is mounted unconditionally (Rules of
+  // Hooks) but only connects while the view is open; leaving it closes the socket, cancels the
+  // fallback timer and revokes the token once (R-M1-34).
+  const liveAlerts = useLiveAlerts(view === 'alerts');
   const selectedChild = pickSelectedChild(childrenState.children, selectedChildId);
 
   // Contacts are read only for the selected child and only while the contacts view is open.
@@ -935,6 +940,15 @@ export default function App() {
             onAssign={(userId) => { void handleAssignGuardian(userId); }}
             onUnassign={(userId) => { void handleUnassignGuardian(userId); }}
             onRefresh={handleRefreshGuardians}
+          />
+        )}
+
+        {view === 'alerts' && (
+          <AlertsLog
+            lang={lang}
+            entries={liveAlerts.entries}
+            devices={childrenState.children.map((child) => child.device)}
+            connection={liveAlerts.connection}
           />
         )}
       </main>

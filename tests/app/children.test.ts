@@ -477,9 +477,11 @@ test('R-M1-23: App always renders the guardian shell; Navbar branches on the vie
 
   assert.doesNotMatch(app, /role === 'PARENT'\s*\?/, 'the old role render branch must be gone');
   assert.doesNotMatch(app, /<ChildView\b/, 'ChildView stays on disk but unimported (Task 11 debt)');
-  assert.match(app, /'dashboard' \| 'children' \| 'contacts'/, 'the shell has exactly the three views');
+  assert.match(app, /'dashboard' \| 'children' \| 'contacts' \| 'alerts'/, 'the shell has exactly the four views');
   assert.match(app, /<ChildScreen\b/);
   assert.match(app, /<ContactsScreen\b/);
+  assert.match(app, /view === 'alerts'[\s\S]{0,80}<AlertsLog/,
+    'the fourth view renders the alerts log (R-M1-29)');
   assert.match(app, /view === 'dashboard'[\s\S]{0,80}<ParentDashboard/,
     'the dashboard is one view of the guardian shell, not a role branch');
   assert.match(app, /useChildren\(\)/, 'App consumes the server-backed children state');
@@ -499,6 +501,7 @@ test('R-M1-23: App always renders the guardian shell; Navbar branches on the vie
   assert.match(navbar, /tabs\.dashboard/);
   assert.match(navbar, /tabs\.children/);
   assert.match(navbar, /tabs\.contacts/);
+  assert.match(navbar, /tabs\.alerts/);
 });
 
 // ── R-M1-18: the two new screens hold no literal copy and no hard-coded RTL ─────────────────────
