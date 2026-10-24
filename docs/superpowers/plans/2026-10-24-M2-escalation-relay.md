@@ -88,10 +88,10 @@
 Each ruling is recorded here so an implementer never has to guess, and so a reviewer can reject a deviation:
 
 1. **All recipients are sent in parallel at ingest**, then one recipient at a time owns the *current* window. The ladder is an escalation of responsibility, not of delivery.
-2. **The window starts at delivery when a delivery exists, otherwise at send**, and is audited with `basis: 'delivered' | 'sent'`. A late delivery pushes the current deadline later (never earlier).
-3. **At the last recipient's expiry**, the relay audits `window_expired {atEnd:true}` once and stays active. M2 has no close endpoint.
-4. **Any recipient may ack, including one who is not current.** The ack assigns `assigneeUserId`, stops the ladder, and changes nothing else. A second ack by a different user is `409 conflict`; a repeat ack by the same user is idempotent.
-5. **Silence=alarm:** five minutes (≥300 000 ms) without a fresh fix degrades every open incident, clears its assignee, jumps the current contact to the last recipient, audits `degraded` + `escalation {reason:'silence'}`, and is never auto-cleared.
+2. **The window starts at the later of the handoff instant and the contact's delivery-else-send instant**, so a guardian escalated to after their notice landed still gets a full window. The escalation audit records the real anchor: `basis: 'delivered'` only when the delivery instant is ≥ the handoff, otherwise `'sent'`, plus `anchorAt` and `deadlineAt`. A late delivery pushes the current deadline later (never earlier).
+3. **At the last recipient's expiry**, the relay audits `window_expired {atEnd:true}` once and stays active. `atEnd` is terminal: a late `delivered`/`opened` afterwards records the receipt but never installs a window, so a second `atEnd` audit is impossible. M2 has no close endpoint.
+4. **Any recipient may ack, including one who is not current.** The ack assigns `assigneeUserId`, stops the ladder, and changes nothing else. The ack audit carries `assigneeUserId` and `afterDegraded`. An ack after degradation records the assignee but keeps `state:'degraded'` and the `degraded` flag: degradation is never cleared by an ack. A second ack by a different user is `409 conflict`; a repeat ack by the same user is idempotent.
+5. **Silence=alarm:** five minutes (≥300 000 ms) without a fresh fix degrades every open incident, clears its assignee, jumps the current contact to the last recipient, audits `degraded` + `escalation {reason:'silence'}`, and is never auto-cleared. The jump is terminal: `atEnd` becomes true.
 6. **A source poll failure is not silence.** It audits `source_poll_failed` once per transition and never degrades. An unreadable `fixTime` is not evidence either: it yields `unknown`, which neither degrades nor recovers.
 7. **Recipients** come from `LAB_RELAY_RECIPIENT_IDS` when set (comma-separated user ids, sorted ascending); otherwise from `GET /api/users` at startup and every 5 minutes. M2 treats every account as a guardian; named-guardian selection and quorum are AC-14 and NOT RUN.
 8. **Silence watches the oldest fix among returned devices.** With one lab device this is exact; with several it is the conservative reading. Multi-child silence is NOT RUN.
@@ -827,6 +827,114 @@ test('incidents: an ignored tier creates no incident and is audited', () => {
   assert.equal(store.list().length, 0);
   assert.equal(audit.entries().find((entry) => entry.action === 'ignored')!.data.reason, 'tier_none');
 });
+
+test('incidents: a repeated event id returns the original incident and never re-sends', () => {
+  const { store, audit } = setup();
+  const first = store.ingest(forwardPayload())!;
+  const second = store.ingest(forwardPayload())!;
+  assert.equal(second.id, first.id);
+  assert.equal(store.list().length, 1);
+  assert.equal(actions(audit).filter((action) => action === 'ingest').length, 1);
+  assert.equal(actions(audit).filter((action) => action === 'sent').length, 2);
+});
+
+test('incidents: an escalation past a notification that landed earlier is audited as sent, with its real anchor', () => {
+  const { store, clock, audit } = setup();
+  const incident = store.ingest(forwardPayload())!;
+  clock.advance(10_000);
+  store.delivered(incident.id, 2);
+  clock.advance(50_000);
+  store.tick();
+  const escalation = audit.entries().find((entry) => entry.action === 'escalation')!;
+  const after = store.get(incident.id);
+  assert.equal(after.deadlineAt, new Date(T0 + WINDOW + WINDOW).toISOString());
+  assert.equal(escalation.data.basis, 'sent');
+  assert.equal(escalation.data.anchorAt, new Date(T0 + WINDOW).toISOString());
+  assert.equal(escalation.data.deadlineAt, after.deadlineAt);
+});
+
+test('incidents: an escalation at the delivery instant is audited as delivered', () => {
+  const { store, clock, audit } = setup();
+  const incident = store.ingest(forwardPayload())!;
+  clock.advance(WINDOW);
+  store.delivered(incident.id, 2);
+  store.tick();
+  const escalation = audit.entries().find((entry) => entry.action === 'escalation')!;
+  assert.equal(escalation.data.basis, 'delivered');
+  assert.equal(escalation.data.anchorAt, new Date(T0 + WINDOW).toISOString());
+  assert.equal(store.get(incident.id).deadlineAt, new Date(T0 + WINDOW + WINDOW).toISOString());
+});
+
+test('incidents: a late receipt after the ladder ended cannot reopen a window', () => {
+  const deliveredRun = setup();
+  const deliveredIncident = deliveredRun.store.ingest(forwardPayload())!;
+  deliveredRun.clock.advance(WINDOW);
+  deliveredRun.store.tick();
+  deliveredRun.clock.advance(WINDOW);
+  deliveredRun.store.tick();
+  deliveredRun.clock.advance(5_000);
+  assert.equal(deliveredRun.store.delivered(deliveredIncident.id, 2).deadlineAt, null);
+
+  const openedRun = setup();
+  const openedIncident = openedRun.store.ingest(forwardPayload())!;
+  openedRun.clock.advance(WINDOW);
+  openedRun.store.tick();
+  openedRun.clock.advance(WINDOW);
+  openedRun.store.tick();
+  openedRun.clock.advance(5_000);
+  assert.equal(openedRun.store.opened(openedIncident.id, 2).deadlineAt, null);
+
+  for (const run of [deliveredRun, openedRun]) {
+    run.clock.advance(10 * WINDOW);
+    run.store.tick();
+    const atEnd = run.audit.entries().filter((entry) => entry.action === 'window_expired' && entry.data.atEnd === true);
+    assert.equal(atEnd.length, 1);
+  }
+});
+
+test('incidents: an opened receipt without a prior delivery counts as an inferred delivery', () => {
+  const { store, clock, audit } = setup();
+  const incident = store.ingest(forwardPayload())!;
+  clock.advance(20_000);
+  const after = store.opened(incident.id, 1);
+  assert.equal(after.deliveries[0].state, 'opened');
+  assert.equal(after.deliveries[0].deliveredAt, new Date(T0 + 20_000).toISOString());
+  assert.equal(after.deadlineAt, new Date(T0 + 20_000 + WINDOW).toISOString());
+  const inferred = audit.entries().find((entry) => entry.action === 'delivered' && entry.data.inferred === true);
+  assert.ok(inferred);
+});
+
+test('incidents: acking a degraded incident records the assignee and keeps the degraded state', () => {
+  const { store, audit } = setup();
+  const incident = store.ingest(forwardPayload())!;
+  store.degradeOpen('silence');
+  const result = store.ack(incident.id, 2);
+  assert.equal(result.changed, true);
+  assert.equal(result.incident.assigneeUserId, 2);
+  assert.equal(result.incident.state, 'degraded');
+  assert.equal(result.incident.degraded, true);
+  assert.equal(result.incident.deadlineAt, null);
+  const ack = audit.entries().find((entry) => entry.action === 'ack')!;
+  assert.equal(ack.data.assigneeUserId, 2);
+  assert.equal(ack.data.afterDegraded, true);
+  assert.equal(store.ack(incident.id, 2).changed, false);
+});
+
+test('incidents: a non-recipient cannot receipt or ack the incident', () => {
+  const { store } = setup();
+  const incident = store.ingest(forwardPayload())!;
+  for (const attempt of [
+    () => store.delivered(incident.id, 99),
+    () => store.opened(incident.id, 99),
+    () => store.ack(incident.id, 99),
+  ]) {
+    assert.throws(attempt, (error: unknown) => {
+      assert.ok(error instanceof RelayError);
+      assert.equal((error as RelayError).kind, 'forbidden');
+      return true;
+    });
+  }
+});
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -962,11 +1070,15 @@ export function createIncidentStore({
       timeline(incident, 'window_expired', { userId: from, atEnd: false });
       const next = incident.recipients[index + 1];
       const nextDelivery = incident.deliveries[index + 1];
+      const deliveryMs = nextDelivery.deliveredAt === null ? null : Date.parse(nextDelivery.deliveredAt);
       const start = Math.max(at, baseMs(nextDelivery));
       incident.currentRecipientUserId = next.userId;
       incident.deadlineAt = new Date(start + incident.windowMs).toISOString();
       audit.record('escalation', {
-        incidentId: incident.id, from, to: next.userId, basis: nextDelivery.deliveredAt ? 'delivered' : 'sent',
+        incidentId: incident.id, from, to: next.userId,
+        basis: deliveryMs !== null && deliveryMs >= at ? 'delivered' : 'sent',
+        anchorAt: new Date(start).toISOString(),
+        deadlineAt: incident.deadlineAt,
       });
       timeline(incident, 'escalation', { from, to: next.userId });
     }
@@ -1037,7 +1149,7 @@ export function createIncidentStore({
       delivery.state = 'delivered';
       audit.record('delivered', { incidentId: id, userId, inferred: false });
       timeline(incident, 'delivered', { userId });
-      if (!incident.degraded && incident.state === 'active' && incident.currentRecipientUserId === userId) {
+      if (!incident.atEnd && !incident.degraded && incident.state === 'active' && incident.currentRecipientUserId === userId) {
         const next = at + incident.windowMs;
         if (incident.deadlineAt === null || next > Date.parse(incident.deadlineAt)) {
           incident.deadlineAt = new Date(next).toISOString();
@@ -1056,7 +1168,7 @@ export function createIncidentStore({
         delivery.deliveredAt = iso;
         audit.record('delivered', { incidentId: id, userId, inferred: true });
         timeline(incident, 'delivered', { userId, inferred: true });
-        if (!incident.degraded && incident.state === 'active' && incident.currentRecipientUserId === userId) {
+        if (!incident.atEnd && !incident.degraded && incident.state === 'active' && incident.currentRecipientUserId === userId) {
           const next = at + incident.windowMs;
           if (incident.deadlineAt === null || next > Date.parse(incident.deadlineAt)) {
             incident.deadlineAt = new Date(next).toISOString();
@@ -1078,9 +1190,11 @@ export function createIncidentStore({
       }
       if (incident.assigneeUserId === userId) return { incident: structuredClone(incident), changed: false };
       incident.assigneeUserId = userId;
-      incident.state = 'assigned';
-      incident.deadlineAt = null;
-      audit.record('ack', { incidentId: id, userId, afterDegraded: incident.degraded });
+      if (!incident.degraded) {
+        incident.state = 'assigned';
+        incident.deadlineAt = null;
+      }
+      audit.record('ack', { incidentId: id, userId, assigneeUserId: userId, afterDegraded: incident.degraded });
       timeline(incident, 'ack', { userId });
       return { incident: structuredClone(incident), changed: true };
     },
@@ -1128,9 +1242,9 @@ export type IncidentStore = ReturnType<typeof createIncidentStore>;
 - [ ] **Step 4: Run the tests to verify they pass and raise the floor**
 
 Run: `npm run test:relay --silent`
-Expected: `ℹ tests 25`, `ℹ fail 0`.
+Expected: `ℹ tests 32`, `ℹ fail 0`.
 
-Set `EXPECTED_MIN_TESTS` in `.github/workflows/m2-ci.yml` to the printed count (25 if unchanged).
+Set `EXPECTED_MIN_TESTS` in `.github/workflows/m2-ci.yml` to the printed count (32 if unchanged).
 
 - [ ] **Step 5: Commit**
 
@@ -1430,7 +1544,7 @@ and inside the returned object, after `get`:
 - [ ] **Step 4: Run the tests to verify they pass and raise the floor**
 
 Run: `npm run test:relay --silent`
-Expected: `ℹ tests 36`, `ℹ fail 0`.
+Expected: `ℹ tests 43`, `ℹ fail 0`.
 
 Set `EXPECTED_MIN_TESTS` in `m2-ci.yml` to the printed count.
 
@@ -2096,7 +2210,7 @@ export type RelayServer = ReturnType<typeof createRelayServer>;
 - [ ] **Step 4: Run the tests to verify they pass and raise the floor**
 
 Run: `npm run test:relay --silent`
-Expected: `ℹ tests 54`, `ℹ fail 0` (10 + 15 + 11 + 18).
+Expected: `ℹ tests 61`, `ℹ fail 0` (10 + 22 + 11 + 18).
 
 Set `EXPECTED_MIN_TESTS` in `m2-ci.yml` to the printed count.
 
@@ -2519,7 +2633,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
 - [ ] **Step 4: Run the tests to verify they pass and raise the floor**
 
 Run: `npm run test:relay --silent`
-Expected: `ℹ tests 68`, `ℹ fail 0` (10 + 15 + 11 + 18 + 14).
+Expected: `ℹ tests 75`, `ℹ fail 0` (10 + 22 + 11 + 18 + 14).
 
 Run: `npm run lint`
 Expected: exit 0 (this is the first task that imports `node:fs`/`node:path`/`node:url` in `relay/`).
