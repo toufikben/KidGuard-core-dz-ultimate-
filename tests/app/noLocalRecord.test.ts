@@ -1,9 +1,10 @@
 // tests/app/noLocalRecord.test.ts — Task 11 guards for the spec §1.5 deletions (R-M1-37..R-M1-42).
 //
-// The file is written BEFORE any deletion and is expected to be RED on the current tree: the role
-// model, its translations, the simulation switches, the stub server and the record keys in App are
-// still present. Every failure names the offending file and key/match so the RED log proves the
-// guards are connected to the real tree, not to an empty glob.
+// Written BEFORE any deletion: at f21fd25 every guard here was RED — the role model, its
+// translations, the simulation switches, the stub server and the record keys in App were still
+// present. Each failure named the offending file and key/match, so the RED run (preserved as
+// task-11-red.log in the SDD workspace) proves the guards are connected to the real tree, not to an
+// empty glob. At HEAD all 11 must be green.
 //
 // The 11 named tests:
 //   (أ) runtime: saving a zone writes no local record

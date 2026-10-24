@@ -176,7 +176,7 @@ export default function App() {
     healthMonitor.getHealthDiagnostics(location)
   );
 
-  // Persist language — the only local record App still writes.
+  // Persist language — a setting (R-M1-4), the only local value App still writes.
   useEffect(() => {
     try {
       localStorage.setItem(LANG_KEY, lang);
