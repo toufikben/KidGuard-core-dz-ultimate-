@@ -7,12 +7,15 @@ import { fakeClock, forwardPayload } from './helpers.ts';
 
 const T0 = 1_700_000_000_000;
 
-function sheetFor(options: { alarm?: string; type?: string; serial?: string } = {}) {
+function sheetFor(options: { alarm?: string | null; type?: string; serial?: string } = {}) {
   const clock = fakeClock(T0);
   const audit = createAuditLog({ now: clock.now });
   const store = createIncidentStore({ audit, recipients: [{ userId: 1 }, { userId: 2 }], now: clock.now });
   const incident = store.ingest(forwardPayload({
-    alarm: options.alarm ?? 'sos', type: options.type ?? 'alarm', serial: options.serial ?? '1234567890HMS8',
+    alarm: options.alarm === undefined ? 'sos' : options.alarm,
+    type: options.type ?? 'alarm',
+    serial: options.serial ?? '1234567890HMS8',
+    fixTime: new Date(T0).toISOString(),
   }))!;
   return { clock, store, incident };
 }
@@ -24,7 +27,7 @@ test('sheet: a P0 sheet names the incident, tier, coordinates, age, and the lab 
   assert.match(text, /P0/);
   assert.match(text, /36\.75380/);
   assert.match(text, /3\.05880/);
-  assert.match(text, /12/);
+  assert.match(text, /عمر الموقع: 12 ثانية/);
   assert.match(text, /بيانات مختبر/);
 });
 
@@ -93,13 +96,14 @@ test('sheet: output is bounded at 4000 characters and keeps the footer', () => {
   const audit = createAuditLog({ now: clock.now });
   const many = Array.from({ length: 60 }, (_, index) => ({ userId: index + 1, name: 'مستلم طويل جداً '.repeat(4) }));
   const store = createIncidentStore({ audit, recipients: many, now: clock.now });
-  const incident = store.ingest(forwardPayload())!;
+  const incident = store.ingest(forwardPayload({ type: 'alarm', alarm: 'x'.repeat(2_000) }))!;
   for (let i = 0; i < 30; i += 1) {
     clock.advance(1000);
     store.delivered(incident.id, (i % 60) + 1);
   }
   const text = renderIncidentSheet(store.get(incident.id), clock.now());
   assert.ok(text.length <= MAX_SHEET_CHARS, `sheet length ${text.length}`);
+  assert.match(text, /اقتُطع/);
   assert.match(text, /بيانات مختبر/);
 });
 
@@ -135,6 +139,17 @@ test('sheet: truncation is honest — the marker appears exactly when timeline e
   assert.match(none, /اقتُطع/);
   assert.match(none, /بيانات مختبر/);
   assert.doesNotMatch(none, /UTC — /);
+});
+
+test('sheet: the last-resort cut never splits a surrogate pair', () => {
+  const clock = fakeClock(T0);
+  const audit = createAuditLog({ now: clock.now });
+  const store = createIncidentStore({ audit, recipients: [{ userId: 1 }], now: clock.now });
+  const incident = store.ingest(forwardPayload({ type: 'alarm', alarm: 'xx😀'.repeat(2_200) }))!;
+  const text = renderIncidentSheet(store.get(incident.id), clock.now());
+  assert.ok(text.length <= MAX_SHEET_CHARS, `sheet length ${text.length}`);
+  assert.doesNotMatch(text, /(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  assert.match(text, /بيانات مختبر/);
 });
 
 test('sheet: no NaN or undefined reaches the text', () => {

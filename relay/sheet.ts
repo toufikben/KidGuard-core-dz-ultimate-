@@ -117,5 +117,7 @@ export function renderIncidentSheet(incident: Incident, nowMs: number): string {
   if (text.length <= MAX_SHEET_CHARS) return text;
   // Last resort: keep the two honest closing lines and cut from the middle of the body.
   const tail = `\n… (اقتُطع)\n${AC17}\n${LAB_FOOTER}`;
-  return `${text.slice(0, MAX_SHEET_CHARS - tail.length)}${tail}`;
+  let cut = MAX_SHEET_CHARS - tail.length;
+  if ((text.charCodeAt(cut - 1) & 0xfc00) === 0xd800) cut -= 1;
+  return `${text.slice(0, cut)}${tail}`;
 }
